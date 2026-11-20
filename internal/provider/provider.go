@@ -103,7 +103,7 @@ func valueOrEnv(diags *diag.Diagnostics, v types.String, attribute, env string) 
 }
 
 func (p *weblateProvider) Resources(context.Context) []func() resource.Resource {
-	return []func() resource.Resource{NewProjectResource}
+	return []func() resource.Resource{NewProjectResource, NewCategoryResource}
 }
 
 func (p *weblateProvider) DataSources(context.Context) []func() datasource.DataSource {
