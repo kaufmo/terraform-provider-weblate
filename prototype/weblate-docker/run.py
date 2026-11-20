@@ -116,31 +116,31 @@ def cold_start():
 
 
 def probe(fn):
+    out = {}
     try:
-        return fn()
+        fn(out)
     except Exception as e:
-        return {"error": repr(e)}
+        out["error"] = repr(e)
+    return out
 
 
-def probe_schema():
+def probe_schema(out):
     status, schema = api("GET", "/api/schema/?format=json")
     if status != 200:
-        return {"status": status, "body": schema}
+        out.update(status=status, body=schema)
+        return
     paths = schema["paths"]
-    return {
-        "project_addon_paths": {p: sorted(paths[p]) for p in paths if "project" in p and "addon" in p},
-        "component_lists_methods": sorted(paths.get("/api/component-lists/", {})),
-    }
+    out["project_addon_paths"] = {p: sorted(paths[p]) for p in paths if "project" in p and "addon" in p}
+    out["component_lists_methods"] = sorted(paths.get("/api/component-lists/", {}))
 
 
-def probe_settings():
+def probe_settings(out):
     _, project = api("GET", "/api/projects/proto/")
     _, component = api("GET", "/api/components/proto/demo/")
-    return {"project_keys": sorted(project), "component_keys": sorted(component)}
+    out.update(project_keys=sorted(project), component_keys=sorted(component))
 
 
-def probe_component():
-    out = {}
+def probe_component(out):
     out["create_project"], _ = api(
         "POST", "/api/projects/", {"name": "Proto", "slug": "proto", "web": "https://example.com"}
     )
@@ -180,8 +180,7 @@ def probe_component():
     return out
 
 
-def probe_nulls():
-    out = {}
+def probe_nulls(out):
     api("POST", "/api/projects/", {"name": "Proto 2", "slug": "proto2", "web": "https://example.com"})
     _, page1 = api("GET", "/api/projects/?page_size=1")
     out["page1"] = {k: page1.get(k) for k in ("count", "next", "previous")}
@@ -205,11 +204,12 @@ def probe_nulls():
 def object_id(obj):
     if "id" in obj:
         return obj["id"]
-    return int(obj["url"].rstrip("/").rsplit("/", 1)[-1])
+    if "url" in obj:
+        return int(obj["url"].rstrip("/").rsplit("/", 1)[-1])
+    return None
 
 
-def probe_groups():
-    out = {}
+def probe_groups(out):
     status, clist = api("POST", "/api/component-lists/", {"name": "Proto list", "slug": "proto-list"})
     out["create_component_list"] = status if status == 201 else {"status": status, "body": clist}
     status, group = api("POST", "/api/groups/", {"name": "Proto team"})
@@ -217,6 +217,12 @@ def probe_groups():
     if status != 201:
         return out
     gid = object_id(group)
+    if gid is None:
+        _, groups = api("GET", "/api/groups/?page_size=100")
+        listed = next(g for g in groups["results"] if g.get("name") == "Proto team")
+        out["group_list_keys"] = sorted(listed)
+        gid = object_id(listed)
+    out["group_id"] = gid
     _, roles = api("GET", "/api/roles/")
     _, project = api("GET", "/api/projects/proto/")
     _, component = api("GET", "/api/components/proto/demo/")
@@ -239,8 +245,7 @@ def probe_groups():
     return out
 
 
-def probe_cleanup():
-    out = {}
+def probe_cleanup(out):
     for slug in ("proto2", "proto"):
         t0 = time.monotonic()
         status, _ = api("DELETE", f"/api/projects/{slug}/")
