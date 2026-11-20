@@ -57,6 +57,6 @@ jobs:
         run: go test ./... -run '^TestAcc' -v -timeout 25m
         env:
           TF_ACC: "1"
-      - name: Show the Weblate log
+      - name: Show the Weblate and git server logs
         if: failure()
-        run: docker compose -f test/weblate/compose.yaml logs --tail 200 weblate
+        run: docker compose -f test/weblate/compose.yaml logs --tail 200 weblate gitserver

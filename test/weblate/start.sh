@@ -1,7 +1,7 @@
 #!/bin/sh
 # Starts a fresh Weblate instance for the acceptance tests and prints WEBLATE_URL, WEBLATE_API_TOKEN of the user admin,
 # WEBLATE_REVIEWER_API_TOKEN of the user reviewer, who is only in Weblate's default Groups, and WEBLATE_TEST_WORKSPACE,
-# the UUID of a Workspace, as KEY=value lines, for
+# the UUID of a Workspace, and WEBLATE_IMAGE, which later `docker compose` commands need, as KEY=value lines, for
 # `export $(test/weblate/start.sh)` or `test/weblate/start.sh >> "$GITHUB_ENV"`.
 #
 # WEBLATE_IMAGE overrides the image from the Dockerfile, WEBLATE_PORT the local port (default 8080).
@@ -53,5 +53,5 @@ Workspace.objects.create(id='$workspace', name='Acceptance tests')
 " >&2
 curl -fsS -o /dev/null -H "Authorization: Token $token" "$url/api/"
 
-printf 'WEBLATE_URL=%s\nWEBLATE_API_TOKEN=%s\nWEBLATE_REVIEWER_API_TOKEN=%s\nWEBLATE_TEST_WORKSPACE=%s\n' "$url" "$token" \
-	"$reviewer_token" "$workspace"
+printf 'WEBLATE_URL=%s\nWEBLATE_API_TOKEN=%s\nWEBLATE_REVIEWER_API_TOKEN=%s\nWEBLATE_TEST_WORKSPACE=%s\nWEBLATE_IMAGE=%s\n' \
+	"$url" "$token" "$reviewer_token" "$workspace" "$WEBLATE_IMAGE"
