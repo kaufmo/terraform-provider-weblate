@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 )
 
@@ -25,7 +26,10 @@ func TestGetProjectDecodesTheProject(t *testing.T) {
 	}
 	want := Project{ID: 7, Slug: "docs", Name: "Docs", Web: "https://docs.example.com", CommitPolicy: 30,
 		AccessControl: 100, UseSharedTM: true}
-	if *p != want {
+	if got := string(p.Fields["commit_policy"]); got != "30" {
+		t.Errorf("Fields[commit_policy] = %s, want the raw JSON 30", got)
+	}
+	if p.Fields = nil; !reflect.DeepEqual(*p, want) {
 		t.Errorf("GetProject = %+v, want %+v", *p, want)
 	}
 }

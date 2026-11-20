@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -10,15 +11,26 @@ import (
 )
 
 // Category is a Weblate Category with the fields of Weblate's Category serializer that the provider reads. Weblate
-// references the Project and the parent Category by their absolute API URLs.
+// references the Project and the parent Category by their absolute API URLs. Fields holds the raw JSON of every
+// field of the response by name.
 type Category struct {
 	ID      int64  `json:"id"`
 	Name    string `json:"name"`
 	Slug    string `json:"slug"`
 	Project string `json:"project"`
 	// Category is the URL of the parent Category, or nil at the Project root.
-	Category *string `json:"category"`
-	URL      string  `json:"url"`
+	Category *string                    `json:"category"`
+	URL      string                     `json:"url"`
+	Fields   map[string]json.RawMessage `json:"-"`
+}
+
+// UnmarshalJSON fills the typed fields and Fields.
+func (c *Category) UnmarshalJSON(data []byte) error {
+	type plain Category
+	if err := json.Unmarshal(data, (*plain)(c)); err != nil {
+		return err
+	}
+	return json.Unmarshal(data, &c.Fields)
 }
 
 // ProjectSlug returns the slug of the Category's Project, taken from the Project's URL.
