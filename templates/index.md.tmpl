@@ -1,0 +1,26 @@
+---
+page_title: "Provider: Weblate"
+description: |-
+{{ .Description | plainmarkdown | trimspace | prefixlines "  " }}
+---
+
+# Weblate Provider
+
+{{ .Description | trimspace }}
+
+## Requirements
+
+- OpenTofu 1.11 or later, or Terraform 1.11 or later.
+- Weblate `2026.10.1` or later.
+
+## Authentication
+
+The provider authenticates with an API token. A User token (`wlu_…`) can manage every object its user has the
+permissions for; instance-wide objects such as Groups need a user with administration rights. A Project token
+(`wlp_…`) can manage only objects inside its Project.
+
+## Example Usage
+
+{{ tffile "examples/provider/provider.tf" }}
+
+{{ .SchemaMarkdown | trimspace }}

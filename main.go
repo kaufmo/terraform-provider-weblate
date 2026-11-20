@@ -10,7 +10,8 @@ import (
 	"github.com/kaufmo/terraform-provider-weblate/internal/provider"
 )
 
-//go:generate go tool tfplugindocs generate --provider-name weblate
+//go:generate go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@v0.25.0 generate --provider-name weblate
+//go:generate go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@v0.25.0 validate --provider-name weblate
 
 // version is set by the release build.
 var version = "dev"
