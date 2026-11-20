@@ -118,7 +118,7 @@ func (c *Client) send(ctx context.Context, method, target string, payload []byte
 	if err != nil {
 		return nil, nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(resp.Body)
 	return resp, data, err
 }
