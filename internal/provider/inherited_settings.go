@@ -52,7 +52,6 @@ var inheritedSettingFields = func() map[string]serializerField {
 	return fields
 }()
 
-// inheritedSettingsDescription is the paragraph of the resource descriptions about the Inherited settings.
 const inheritedSettingsDescription = "Each Inherited setting is a pair of attributes, such as `license` and " +
 	"`inherit_license`. With `license` set, the provider sends `inherit_license = false` with it. With " +
 	"`inherit_license = true`, the setting comes from the next level up: Category, Project, then Workspace. " +

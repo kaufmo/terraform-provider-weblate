@@ -91,7 +91,6 @@ func newProjectResourceModel(ctx context.Context, p *client.Project, t timeouts.
 	}, diags
 }
 
-// NewProjectResource returns the weblate_project resource.
 func NewProjectResource() resource.Resource {
 	return &projectResource{}
 }

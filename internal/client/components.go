@@ -29,7 +29,6 @@ type Component struct {
 	Fields  map[string]json.RawMessage `json:"-"`
 }
 
-// UnmarshalJSON fills the typed fields and Fields.
 func (c *Component) UnmarshalJSON(data []byte) error {
 	type plain Component
 	if err := json.Unmarshal(data, (*plain)(c)); err != nil {

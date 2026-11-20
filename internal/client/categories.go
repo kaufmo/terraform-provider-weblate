@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
-	"path"
 	"strings"
 )
 
@@ -24,7 +22,6 @@ type Category struct {
 	Fields   map[string]json.RawMessage `json:"-"`
 }
 
-// UnmarshalJSON fills the typed fields and Fields.
 func (c *Category) UnmarshalJSON(data []byte) error {
 	type plain Category
 	if err := json.Unmarshal(data, (*plain)(c)); err != nil {
@@ -33,21 +30,10 @@ func (c *Category) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, &c.Fields)
 }
 
-// ProjectSlug returns the slug of the Category's Project, taken from the Project's URL.
-func (c *Category) ProjectSlug() string {
-	u, err := url.Parse(c.Project)
-	if err != nil {
-		return ""
-	}
-	return path.Base(u.Path)
-}
-
-// CategoryRef returns the API path of the Category with the given numeric ID.
 func CategoryRef(id int64) string {
 	return fmt.Sprintf("categories/%d/", id)
 }
 
-// GetCategory reads the Category with the given numeric ID.
 func (c *Client) GetCategory(ctx context.Context, id int64) (*Category, error) {
 	return c.categoryRequest(ctx, http.MethodGet, CategoryRef(id), nil)
 }
@@ -119,7 +105,8 @@ func walkSlugPath(cat *Category, parent func(ref string) (*Category, error)) (st
 		p = next.Slug + "/" + p
 		ref = next.Category
 	}
-	return cat.ProjectSlug() + "/" + p, nil
+	project, err := ProjectSlugFromURL(cat.Project)
+	return project + "/" + p, err
 }
 
 func (c *Client) categoryRequest(ctx context.Context, method, ref string, body any) (*Category, error) {

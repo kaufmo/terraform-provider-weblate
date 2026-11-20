@@ -22,12 +22,10 @@ type Addon struct {
 	Configuration json.RawMessage `json:"configuration"`
 }
 
-// AddonRef returns the API path of the Add-on with the given ID.
 func AddonRef(id int64) string {
 	return "addons/" + strconv.FormatInt(id, 10) + "/"
 }
 
-// GetAddon reads the Add-on with the given ID.
 func (c *Client) GetAddon(ctx context.Context, id int64) (*Addon, error) {
 	return c.addonRequest(ctx, http.MethodGet, AddonRef(id), nil)
 }
@@ -42,7 +40,6 @@ func (c *Client) UpdateAddon(ctx context.Context, id int64, fields map[string]an
 	return c.addonRequest(ctx, http.MethodPatch, AddonRef(id), fields)
 }
 
-// DeleteAddon removes the Add-on with the given ID.
 func (c *Client) DeleteAddon(ctx context.Context, id int64) error {
 	return c.Do(ctx, http.MethodDelete, AddonRef(id), nil, nil)
 }

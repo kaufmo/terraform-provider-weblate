@@ -44,7 +44,6 @@ type projectDataSourceModel struct {
 	inheritedSettingsModel
 }
 
-// NewProjectDataSource returns the weblate_project data source.
 func NewProjectDataSource() datasource.DataSource {
 	return &projectDataSource{}
 }

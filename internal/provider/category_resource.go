@@ -57,7 +57,6 @@ func newCategoryResourceModel(ctx context.Context, c *client.Category, slugPath 
 	}, diags
 }
 
-// NewCategoryResource returns the weblate_category resource.
 func NewCategoryResource() resource.Resource {
 	return &categoryResource{}
 }

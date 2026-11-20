@@ -28,7 +28,6 @@ type providerModel struct {
 	Token types.String `tfsdk:"token"`
 }
 
-// New returns the provider factory for the given release version.
 func New(version string) func() provider.Provider {
 	return func() provider.Provider {
 		return &weblateProvider{version: version}

@@ -94,7 +94,6 @@ func selectionName(diags *diag.Diagnostics, attribute string, number int64) type
 	return types.StringNull()
 }
 
-// NewGroupResource returns the weblate_group resource.
 func NewGroupResource() resource.Resource {
 	return &groupResource{}
 }
@@ -373,7 +372,6 @@ func groupID(ctx context.Context, state tfsdk.State) (int64, diag.Diagnostics) {
 	return n, diags
 }
 
-// oneOfValidator accepts only the given strings.
 type oneOfValidator struct {
 	values []string
 }

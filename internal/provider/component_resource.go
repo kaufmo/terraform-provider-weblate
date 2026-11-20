@@ -370,7 +370,6 @@ type componentResource struct {
 	client *client.Client
 }
 
-// NewComponentResource returns the weblate_component resource.
 func NewComponentResource() resource.Resource {
 	return &componentResource{}
 }

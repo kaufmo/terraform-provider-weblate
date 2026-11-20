@@ -35,7 +35,6 @@ type Project struct {
 	Fields                map[string]json.RawMessage `json:"-"`
 }
 
-// UnmarshalJSON fills the typed fields and Fields.
 func (p *Project) UnmarshalJSON(data []byte) error {
 	type plain Project
 	if err := json.Unmarshal(data, (*plain)(p)); err != nil {
@@ -44,7 +43,6 @@ func (p *Project) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, &p.Fields)
 }
 
-// ProjectRef returns the API path of the Project with the given slug.
 func ProjectRef(slug string) string {
 	return "projects/" + url.PathEscape(slug) + "/"
 }
@@ -74,7 +72,6 @@ func KeyFromURL(apiURL, collection string) (string, error) {
 	return segments[len(segments)-1], nil
 }
 
-// GetProject reads the Project with the given slug.
 func (c *Client) GetProject(ctx context.Context, slug string) (*Project, error) {
 	return c.projectRequest(ctx, http.MethodGet, ProjectRef(slug), nil)
 }

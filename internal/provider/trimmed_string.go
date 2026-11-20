@@ -52,7 +52,6 @@ func (t trimmedStringType) ValueType(context.Context) attr.Value {
 	return trimmedString{}
 }
 
-// trimmedString is a value of trimmedStringType.
 type trimmedString struct {
 	basetypes.StringValue
 }

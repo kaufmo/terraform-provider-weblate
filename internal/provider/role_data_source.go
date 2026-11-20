@@ -24,7 +24,6 @@ type roleDataSourceModel struct {
 	Permissions []string     `tfsdk:"permissions"`
 }
 
-// NewRoleDataSource returns the weblate_role data source.
 func NewRoleDataSource() datasource.DataSource {
 	return &roleDataSource{}
 }

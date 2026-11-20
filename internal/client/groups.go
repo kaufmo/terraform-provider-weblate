@@ -73,7 +73,6 @@ type ComponentList struct {
 	Slug string `json:"slug"`
 }
 
-// GetComponentList reads the Component list with the given slug.
 func (c *Client) GetComponentList(ctx context.Context, slug string) (*ComponentList, error) {
 	var l ComponentList
 	if err := c.Do(ctx, http.MethodGet, "component-lists/"+url.PathEscape(slug)+"/", nil, &l); err != nil {
@@ -82,12 +81,10 @@ func (c *Client) GetComponentList(ctx context.Context, slug string) (*ComponentL
 	return &l, nil
 }
 
-// GroupRef returns the API path of the Group with the given ID.
 func GroupRef(id int64) string {
 	return "groups/" + strconv.FormatInt(id, 10) + "/"
 }
 
-// GetGroup reads the Group with the given ID.
 func (c *Client) GetGroup(ctx context.Context, id int64) (*Group, error) {
 	return c.groupRequest(ctx, http.MethodGet, GroupRef(id), nil)
 }
@@ -103,7 +100,6 @@ func (c *Client) UpdateGroup(ctx context.Context, id int64, fields map[string]an
 	return c.groupRequest(ctx, http.MethodPatch, GroupRef(id), fields)
 }
 
-// DeleteGroup deletes the Group with the given ID.
 func (c *Client) DeleteGroup(ctx context.Context, id int64) error {
 	return c.Do(ctx, http.MethodDelete, GroupRef(id), nil, nil)
 }

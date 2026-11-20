@@ -63,7 +63,6 @@ func removeSecrets(a *client.Addon, secretKeys []string) {
 	a.Configuration, _ = json.Marshal(configuration)
 }
 
-// privateState is the private state of a request or response, whose type is internal to the framework.
 type privateState interface {
 	GetKey(ctx context.Context, key string) ([]byte, diag.Diagnostics)
 	SetKey(ctx context.Context, key string, value []byte) diag.Diagnostics
@@ -132,7 +131,6 @@ func newAddonResourceModel(a *client.Addon) (addonResourceModel, diag.Diagnostic
 	return m, diags
 }
 
-// NewAddonResource returns the weblate_addon resource.
 func NewAddonResource() resource.Resource {
 	return &addonResource{}
 }
