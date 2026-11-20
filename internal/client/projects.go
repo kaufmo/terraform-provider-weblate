@@ -31,10 +31,55 @@ type Project struct {
 	Enforced2FA           bool    `json:"enforced_2fa"`
 }
 
+// ProjectRef returns the API path of the Project with the given slug.
+func ProjectRef(slug string) string {
+	return "projects/" + url.PathEscape(slug) + "/"
+}
+
 // GetProject reads the Project with the given slug.
 func (c *Client) GetProject(ctx context.Context, slug string) (*Project, error) {
+	return c.projectRequest(ctx, http.MethodGet, ProjectRef(slug), nil)
+}
+
+// FindProjectByID searches the list of all Projects for the numeric ID, because Weblate has no endpoint that reads a
+// Project by ID. It returns nil when no Project has the ID.
+func (c *Client) FindProjectByID(ctx context.Context, id int64) (*Project, error) {
+	projects, err := List[Project](ctx, c, "projects/")
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range projects {
+		if p.ID == id {
+			return &p, nil
+		}
+	}
+	return nil, nil
+}
+
+// CreateProject creates a Project with the given fields of Weblate's Project serializer.
+func (c *Client) CreateProject(ctx context.Context, fields map[string]any) (*Project, error) {
+	return c.projectRequest(ctx, http.MethodPost, "projects/", fields)
+}
+
+// UpdateProject changes the given fields of the Project with the given slug. It sends PATCH, never PUT, so that
+// Weblate leaves every other field as it is.
+func (c *Client) UpdateProject(ctx context.Context, slug string, fields map[string]any) (*Project, error) {
+	return c.projectRequest(ctx, http.MethodPatch, ProjectRef(slug), fields)
+}
+
+// DeleteProject schedules the deletion of the Project with the given slug and returns the URL of the deletion task.
+// The Project is gone only when the task has finished; see WaitForDeletion.
+func (c *Client) DeleteProject(ctx context.Context, slug string) (taskURL string, err error) {
+	var resp struct {
+		TaskURL string `json:"task_url"`
+	}
+	err = c.Do(ctx, http.MethodDelete, ProjectRef(slug), nil, &resp)
+	return resp.TaskURL, err
+}
+
+func (c *Client) projectRequest(ctx context.Context, method, ref string, body any) (*Project, error) {
 	var p Project
-	if err := c.Do(ctx, http.MethodGet, "projects/"+url.PathEscape(slug)+"/", nil, &p); err != nil {
+	if err := c.Do(ctx, method, ref, body, &p); err != nil {
 		return nil, err
 	}
 	return &p, nil
