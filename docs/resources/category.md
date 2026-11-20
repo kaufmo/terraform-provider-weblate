@@ -4,9 +4,7 @@ page_title: "weblate_category Resource - weblate"
 subcategory: ""
 description: |-
   Manages a Weblate Category, a folder inside a Project that groups Components. Categories can nest up to three levels deep.
-  
   Changing name or slug renames the Category in place, and changing category moves it in place. Weblate cannot move a Category to another Project, so changing project to another Project fails on apply. When project changes because the Project was renamed, only the state changes. Delete waits until Weblate has removed the Category in the background.
-  
   Each Inherited setting is a pair of attributes, such as license and inherit_license. With license set, the provider sends inherit_license = false with it. With inherit_license = true, the setting comes from the next level up: Category, Project, then Workspace. Setting both fails at plan, and with both omitted the setting is not managed. While a setting is inherited, state holds the value that Weblate stores for this object, which has no effect.
 ---
 

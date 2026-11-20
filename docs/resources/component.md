@@ -4,21 +4,13 @@ page_title: "weblate_component Resource - weblate"
 subcategory: ""
 description: |-
   Manages a Weblate Component, with its own repository or as a Linked Component.
-  
   Weblate strips leading and trailing whitespace from every string, so a value that differs from the stored one only in that whitespace causes no change. An attribute that the configuration omits is not managed: the provider reads it but never changes it. After create and update, the provider compares every configured attribute with the value Weblate stored and fails the apply when they differ; for file_format_params and vcs_params it names the keys that Weblate dropped or changed.
-  
   Changing name or slug renames the Component in place, and changing category moves it in place. Weblate cannot move a Component to another Project, so changing project to another Project fails on apply. When project changes because the Project was renamed, only the state changes.
-  
   Weblate processes a new or changed Component in a background task, such as cloning the repository and parsing the files. The provider waits for the task. When the task fails, the Component stays in Weblate and in state, the apply fails with the task's error and log, and after a create OpenTofu replaces the Component on the next apply. Delete waits until Weblate has removed the Component.
-  
   A Component is a Linked Component, which uses the repository of another Component, only when repo is weblate:// followed by the id of that Component, such as weblate://docs/guides/app. Create always sends disable_autoshare, so Weblate never links a Component because another Component has the same repository. A Linked Component takes push, branch, push_branch, vcs_params, push_on_commit, push_on_update, commit_pending_age and auto_lock_error from the Component it links to, so setting one of them, or a repo_* or push_* credential attribute, fails at plan.
-  
   When the user of the API token lacks the permission vcs.view on the Component, such as with only the Role Review strings or Translate, Weblate returns null for vcs, vcs_params, repo, branch, filemask, screenshot_filemask, push, git_export, push_branch, repoweb, repoweb_translations and linked_component. The provider then warns, keeps their values from state, and cannot detect changes made to them outside OpenTofu. After an import with such a token they stay null, so the next apply sends the configured values.
-  
   Weblate keeps repository credentials only inside the repo and push URLs and does not return them. The provider adds repo_username and repo_password_wo to repo, and push_username and push_password_wo to push; neither falls back to the other, and a URL with a user name or password fails at plan. A changed password shows in the plan only when its *_password_wo_version changes, and the provider cannot detect credentials that were changed outside OpenTofu. Weblate deletes the stored credentials whenever it receives repo or push without them, so the provider sends repo only when repo, repo_username or repo_password_wo_version changes, and then always with the credentials from the configuration; the same applies to push. After an import, or when the credentials were set in the Weblate UI, the first change of repo without repo_password_wo deletes the stored credentials.
-  
   Each Inherited setting is a pair of attributes, such as license and inherit_license. With license set, the provider sends inherit_license = false with it. With inherit_license = true, the setting comes from the next level up: Category, Project, then Workspace. Setting both fails at plan, and with both omitted the setting is not managed. While a setting is inherited, state holds the value that Weblate stores for this object, which has no effect.
-  
   Weblate adds objects of its own on create, which the provider ignores unless the configuration declares them: it installs Add-ons that depend on the file format and the DEFAULT_ADDONS setting, and for the first Component of a Project it creates a glossary Component with the slug glossary, unless the Weblate setting CREATE_GLOSSARIES is off. To manage that glossary, import it, such as docs/glossary.
 ---
 

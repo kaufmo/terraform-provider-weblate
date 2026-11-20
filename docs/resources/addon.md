@@ -4,11 +4,8 @@ page_title: "weblate_addon Resource - weblate"
 subcategory: ""
 description: |-
   Manages a Weblate Add-on on a Component or a Project.
-  
   The provider does not check name or the keys of configuration at plan; Weblate rejects them on apply. Weblate stores only the configuration keys that the Add-on knows and drops the others without an error. After create and update, the provider compares configuration with the value Weblate stored and fails the apply with the keys that Weblate dropped or changed.
-  
   Weblate installs some Add-ons on its own when it creates a Component, depending on the file format and the DEFAULT_ADDONS setting. When Weblate answers that the Add-on is already installed on the Component or Project, create takes over the installed Add-on and sends configuration when it is set. Add-ons that Weblate allows more than once, such as weblate.webhook.webhook, are always installed again. Two weblate_addon resources with the same name on the same Component or Project therefore take over the same Add-on and overwrite each other's configuration.
-  
   Weblate cannot change the name of an Add-on or move it to another Component or Project, so such a change fails on apply; apply with -replace instead. When component or project changes because the Component or Project was renamed or moved, only the state changes.
 ---
 

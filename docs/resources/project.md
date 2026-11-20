@@ -4,11 +4,8 @@ page_title: "weblate_project Resource - weblate"
 subcategory: ""
 description: |-
   Manages a Weblate Project.
-  
   Weblate strips leading and trailing whitespace from every string, so a value that differs from the stored one only in that whitespace, such as a heredoc that ends in a newline, causes no change. An attribute that the configuration omits is not managed: the provider reads it but never changes it, and removing an attribute from the configuration leaves its last value in Weblate. After create and update, the provider compares every configured attribute with the value Weblate stored and fails the apply when they differ.
-  
   Changing name or slug renames the Project in place. Delete waits until Weblate has removed the Project in the background.
-  
   Each Inherited setting is a pair of attributes, such as license and inherit_license. With license set, the provider sends inherit_license = false with it. With inherit_license = true, the setting comes from the next level up: Category, Project, then Workspace. Setting both fails at plan, and with both omitted the setting is not managed. While a setting is inherited, state holds the value that Weblate stores for this object, which has no effect. A Project inherits only from its Workspace, so inherit_<setting> = true fails at plan when workspace is null.
 ---
 

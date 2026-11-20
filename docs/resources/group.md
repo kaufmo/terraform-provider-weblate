@@ -4,9 +4,7 @@ page_title: "weblate_group Resource - weblate"
 subcategory: ""
 description: |-
   Manages a Weblate Group: a set of users that holds Grants, either for the whole Weblate instance or scoped to one Project.
-  
   Managing Groups needs a User token of a user who may manage Groups; Weblate answers a Project token with 403. An attribute that the configuration omits is not managed: the provider reads it but never changes it. After create and update, the provider compares every configured attribute with the value Weblate stored and fails the apply when they differ.
-  
   Weblate creates Built-in Groups, such as Administration or Review, for every Project. They can be imported, but Weblate's API does not tell them apart from other Groups, so destroying the resource deletes the Built-in Group. To stop managing an imported Built-in Group, use a removed block or tofu state rm instead.
 ---
 
