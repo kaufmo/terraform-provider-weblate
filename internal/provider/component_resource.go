@@ -64,7 +64,7 @@ var componentFields = map[string]componentField{
 	"name": {kind: stringField, required: true, description: "Display name of the Component. Unique in the Project."},
 	"slug": {kind: stringField, required: true, description: "Slug of the Component, as in its URL. Unique in the Project."},
 	"repo": {kind: stringField, required: true, credentials: true, description: "URL of the repository that " +
-		"Weblate clones, without credentials."},
+		"Weblate clones, without credentials, or `weblate://` followed by the `id` of the Component to link to."},
 	"filemask": {kind: stringField, required: true, path: true, description: "Path of the translation files relative to the repository root, with `*` instead of the language code, such as `po/*.po`."},
 	"file_format": {kind: stringField, required: true, description: "File format of the translation files, such as " +
 		"`po` or `json`."},
@@ -399,7 +399,7 @@ func (r *componentResource) Schema(ctx context.Context, _ resource.SchemaRequest
 		}
 	}
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Manages a Weblate Component with its own repository.\n\n" +
+		MarkdownDescription: "Manages a Weblate Component, with its own repository or as a Linked Component.\n\n" +
 			"Weblate strips leading and trailing whitespace from every string, so a value that differs from the " +
 			"stored one only in that whitespace causes no change. An attribute that the configuration omits is " +
 			"not managed: the provider reads it but never changes it. After create and update, the provider " +
@@ -412,8 +412,18 @@ func (r *componentResource) Schema(ctx context.Context, _ resource.SchemaRequest
 			"and parsing the files. The provider waits for the task. When the task fails, the Component stays in " +
 			"Weblate and in state, the apply fails with the task's error and log, and after a create OpenTofu " +
 			"replaces the Component on the next apply. Delete waits until Weblate has removed the Component.\n\n" +
-			"Create always sends `disable_autoshare`, so Weblate never turns a Component into a link to another " +
-			"Component with the same repository.\n\n" +
+			"A Component is a Linked Component, which uses the repository of another Component, only when `repo` " +
+			"is `weblate://` followed by the `id` of that Component, such as `weblate://docs/guides/app`. Create " +
+			"always sends `disable_autoshare`, so Weblate never links a Component because another Component has " +
+			"the same repository. A Linked Component takes `push`, `branch`, `push_branch`, `vcs_params`, " +
+			"`push_on_commit`, `push_on_update`, `commit_pending_age` and `auto_lock_error` from the Component " +
+			"it links to, so setting one of them, or a `repo_*` or `push_*` credential attribute, fails at plan.\n\n" +
+			"When the user of the API token lacks the permission `vcs.view` on the Component, such as with only " +
+			"the Role Review strings or Translate, Weblate returns null for `vcs`, `vcs_params`, `repo`, `branch`, " +
+			"`filemask`, `screenshot_filemask`, `push`, `git_export`, `push_branch`, `repoweb`, " +
+			"`repoweb_translations` and `linked_component`. The provider then warns, keeps their values from " +
+			"state, and cannot detect changes made to them outside OpenTofu. After an import with such a token " +
+			"they stay null, so the next apply sends the configured values.\n\n" +
 			"Weblate keeps repository credentials only inside the `repo` and `push` URLs and does not return " +
 			"them. The provider adds `repo_username` and `repo_password_wo` to `repo`, and `push_username` and " +
 			"`push_password_wo` to `push`; neither falls back to the other, and a URL with a user name or " +

@@ -3,7 +3,7 @@
 page_title: "weblate_component Resource - weblate"
 subcategory: ""
 description: |-
-  Manages a Weblate Component with its own repository.
+  Manages a Weblate Component, with its own repository or as a Linked Component.
   
   Weblate strips leading and trailing whitespace from every string, so a value that differs from the stored one only in that whitespace causes no change. An attribute that the configuration omits is not managed: the provider reads it but never changes it. After create and update, the provider compares every configured attribute with the value Weblate stored and fails the apply when they differ; for file_format_params and vcs_params it names the keys that Weblate dropped or changed.
   
@@ -11,7 +11,9 @@ description: |-
   
   Weblate processes a new or changed Component in a background task, such as cloning the repository and parsing the files. The provider waits for the task. When the task fails, the Component stays in Weblate and in state, the apply fails with the task's error and log, and after a create OpenTofu replaces the Component on the next apply. Delete waits until Weblate has removed the Component.
   
-  Create always sends disable_autoshare, so Weblate never turns a Component into a link to another Component with the same repository.
+  A Component is a Linked Component, which uses the repository of another Component, only when repo is weblate:// followed by the id of that Component, such as weblate://docs/guides/app. Create always sends disable_autoshare, so Weblate never links a Component because another Component has the same repository. A Linked Component takes push, branch, push_branch, vcs_params, push_on_commit, push_on_update, commit_pending_age and auto_lock_error from the Component it links to, so setting one of them, or a repo_* or push_* credential attribute, fails at plan.
+  
+  When the user of the API token lacks the permission vcs.view on the Component, such as with only the Role Review strings or Translate, Weblate returns null for vcs, vcs_params, repo, branch, filemask, screenshot_filemask, push, git_export, push_branch, repoweb, repoweb_translations and linked_component. The provider then warns, keeps their values from state, and cannot detect changes made to them outside OpenTofu. After an import with such a token they stay null, so the next apply sends the configured values.
   
   Weblate keeps repository credentials only inside the repo and push URLs and does not return them. The provider adds repo_username and repo_password_wo to repo, and push_username and push_password_wo to push; neither falls back to the other, and a URL with a user name or password fails at plan. A changed password shows in the plan only when its *_password_wo_version changes, and the provider cannot detect credentials that were changed outside OpenTofu. Weblate deletes the stored credentials whenever it receives repo or push without them, so the provider sends repo only when repo, repo_username or repo_password_wo_version changes, and then always with the credentials from the configuration; the same applies to push. After an import, or when the credentials were set in the Weblate UI, the first change of repo without repo_password_wo deletes the stored credentials.
   
@@ -20,7 +22,7 @@ description: |-
 
 # weblate_component (Resource)
 
-Manages a Weblate Component with its own repository.
+Manages a Weblate Component, with its own repository or as a Linked Component.
 
 Weblate strips leading and trailing whitespace from every string, so a value that differs from the stored one only in that whitespace causes no change. An attribute that the configuration omits is not managed: the provider reads it but never changes it. After create and update, the provider compares every configured attribute with the value Weblate stored and fails the apply when they differ; for `file_format_params` and `vcs_params` it names the keys that Weblate dropped or changed.
 
@@ -28,7 +30,9 @@ Changing `name` or `slug` renames the Component in place, and changing `category
 
 Weblate processes a new or changed Component in a background task, such as cloning the repository and parsing the files. The provider waits for the task. When the task fails, the Component stays in Weblate and in state, the apply fails with the task's error and log, and after a create OpenTofu replaces the Component on the next apply. Delete waits until Weblate has removed the Component.
 
-Create always sends `disable_autoshare`, so Weblate never turns a Component into a link to another Component with the same repository.
+A Component is a Linked Component, which uses the repository of another Component, only when `repo` is `weblate://` followed by the `id` of that Component, such as `weblate://docs/guides/app`. Create always sends `disable_autoshare`, so Weblate never links a Component because another Component has the same repository. A Linked Component takes `push`, `branch`, `push_branch`, `vcs_params`, `push_on_commit`, `push_on_update`, `commit_pending_age` and `auto_lock_error` from the Component it links to, so setting one of them, or a `repo_*` or `push_*` credential attribute, fails at plan.
+
+When the user of the API token lacks the permission `vcs.view` on the Component, such as with only the Role Review strings or Translate, Weblate returns null for `vcs`, `vcs_params`, `repo`, `branch`, `filemask`, `screenshot_filemask`, `push`, `git_export`, `push_branch`, `repoweb`, `repoweb_translations` and `linked_component`. The provider then warns, keeps their values from state, and cannot detect changes made to them outside OpenTofu. After an import with such a token they stay null, so the next apply sends the configured values.
 
 Weblate keeps repository credentials only inside the `repo` and `push` URLs and does not return them. The provider adds `repo_username` and `repo_password_wo` to `repo`, and `push_username` and `push_password_wo` to `push`; neither falls back to the other, and a URL with a user name or password fails at plan. A changed password shows in the plan only when its `*_password_wo_version` changes, and the provider cannot detect credentials that were changed outside OpenTofu. Weblate deletes the stored credentials whenever it receives `repo` or `push` without them, so the provider sends `repo` only when `repo`, `repo_username` or `repo_password_wo_version` changes, and then always with the credentials from the configuration; the same applies to `push`. After an import, or when the credentials were set in the Weblate UI, the first change of `repo` without `repo_password_wo` deletes the stored credentials.
 
@@ -55,6 +59,18 @@ resource "weblate_component" "app" {
     po_line_wrap = -1
   })
 }
+
+# A Linked Component: it uses the repository of weblate_component.app, with translation files of its own.
+resource "weblate_component" "app_help" {
+  project     = weblate_project.docs.slug
+  category    = weblate_category.guides.id
+  name        = "App help"
+  slug        = "app-help"
+  repo        = "weblate://${weblate_component.app.id}"
+  filemask    = "help/*.po"
+  new_base    = "help/messages.pot"
+  file_format = "po"
+}
 ```
 
 <!-- schema generated by tfplugindocs -->
@@ -66,7 +82,7 @@ resource "weblate_component" "app" {
 - `filemask` (String) Path of the translation files relative to the repository root, with `*` instead of the language code, such as `po/*.po`.
 - `name` (String) Display name of the Component. Unique in the Project.
 - `project` (String) Slug of the Project that holds the Component.
-- `repo` (String) URL of the repository that Weblate clones, without credentials.
+- `repo` (String) URL of the repository that Weblate clones, without credentials, or `weblate://` followed by the `id` of the Component to link to.
 - `slug` (String) Slug of the Component, as in its URL. Unique in the Project.
 
 ### Optional
@@ -121,6 +137,7 @@ resource "weblate_component" "app" {
 
 - `git_export` (String) URL from which users can fetch the changes in Weblate's copy of the repository.
 - `id` (String) The slug path of the Component: the Project slug, the slugs of its Categories and its own slug, joined by `/`, such as `docs/guides/api`.
+- `linked_component` (String) `id` of the Component whose repository this Linked Component uses, or null. A Component is linked only when `repo` is `weblate://` followed by that `id`.
 - `weblate_id` (Number) Numeric ID that Weblate gave the Component. It stays the same when the Component is renamed or moved, which lets the provider find a Component that was renamed outside OpenTofu.
 
 <a id="nestedblock--timeouts"></a>

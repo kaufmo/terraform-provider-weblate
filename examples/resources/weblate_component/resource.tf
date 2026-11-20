@@ -16,3 +16,15 @@ resource "weblate_component" "app" {
     po_line_wrap = -1
   })
 }
+
+# A Linked Component: it uses the repository of weblate_component.app, with translation files of its own.
+resource "weblate_component" "app_help" {
+  project     = weblate_project.docs.slug
+  category    = weblate_category.guides.id
+  name        = "App help"
+  slug        = "app-help"
+  repo        = "weblate://${weblate_component.app.id}"
+  filemask    = "help/*.po"
+  new_base    = "help/messages.pot"
+  file_format = "po"
+}
