@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -23,8 +24,10 @@ import (
 )
 
 var (
-	_ resource.ResourceWithConfigure   = &groupResource{}
-	_ resource.ResourceWithImportState = &groupResource{}
+	_ resource.ResourceWithConfigure      = &groupResource{}
+	_ resource.ResourceWithImportState    = &groupResource{}
+	_ resource.ResourceWithValidateConfig = &groupResource{}
+	_ resource.ResourceWithModifyPlan     = &groupResource{}
 )
 
 // selections maps the names of the selection attributes to the numbers that Weblate uses for them on the wire.
@@ -44,15 +47,28 @@ type groupResourceModel struct {
 	ProjectSelection  types.String  `tfsdk:"project_selection"`
 	LanguageSelection types.String  `tfsdk:"language_selection"`
 	Enforced2FA       types.Bool    `tfsdk:"enforced_2fa"`
+	Roles             types.Set     `tfsdk:"roles"`
+	Languages         types.Set     `tfsdk:"languages"`
+	Projects          types.Set     `tfsdk:"projects"`
+	ComponentLists    types.Set     `tfsdk:"component_lists"`
+	Components        types.Set     `tfsdk:"components"`
 }
 
-func newGroupResourceModel(g *client.Group) (groupResourceModel, diag.Diagnostics) {
-	var diags diag.Diagnostics
+func newGroupResourceModel(ctx context.Context, g *client.Group, gr *grantResolver) (groupResourceModel, diag.Diagnostics) {
+	grants, diags := gr.grantSets(ctx, g)
+	if diags.HasError() {
+		return groupResourceModel{}, diags
+	}
 	m := groupResourceModel{
-		ID:          types.StringValue(strconv.FormatInt(g.ID, 10)),
-		Name:        trimmedStringValue(g.Name),
-		Project:     types.StringNull(),
-		Enforced2FA: types.BoolValue(g.Enforced2FA),
+		Roles:          grants["roles"],
+		Languages:      grants["languages"],
+		Projects:       grants["projects"],
+		ComponentLists: grants["component_lists"],
+		Components:     grants["components"],
+		ID:             types.StringValue(strconv.FormatInt(g.ID, 10)),
+		Name:           trimmedStringValue(g.Name),
+		Project:        types.StringNull(),
+		Enforced2FA:    types.BoolValue(g.Enforced2FA),
 	}
 	if g.DefiningProject != nil {
 		slug, err := client.ProjectSlugFromURL(*g.DefiningProject)
@@ -91,15 +107,27 @@ func (r *groupResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 	selection := func(attribute, description string) schema.Attribute {
 		return schema.StringAttribute{
 			MarkdownDescription: description + " Weblate's default is `manual`.",
+			Optional:            true,
+			Computed:            true,
+			Validators:          []validator.String{oneOfValidator{slices.Sorted(maps.Keys(selections[attribute]))}},
+			PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+		}
+	}
+	grants := func(description string) schema.Attribute {
+		return schema.SetAttribute{
+			MarkdownDescription: description + " When set, even to `[]`, the attribute lists all Grants of its " +
+				"type: Grants added outside OpenTofu show as drift and the next apply removes them. When omitted, " +
+				"the provider reads the Grants but never changes them, and removing the attribute from the " +
+				"configuration leaves the Grants in Weblate.",
+			ElementType:   types.StringType,
 			Optional:      true,
 			Computed:      true,
-			Validators:    []validator.String{oneOfValidator{slices.Sorted(maps.Keys(selections[attribute]))}},
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			PlanModifiers: []planmodifier.Set{setplanmodifier.UseStateForUnknown()},
 		}
 	}
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Manages a Weblate Group: a set of users that holds Grants, either for the whole Weblate " +
-			"instance or scoped to one Project. The Grants are not managed by this resource yet.\n\n" +
+			"instance or scoped to one Project.\n\n" +
 			"Managing Groups needs a User token of a user who may manage Groups; Weblate answers a Project token with " +
 			"`403`. An attribute that the configuration omits is not managed: the provider reads it but never " +
 			"changes it. After create and update, the provider compares every configured attribute with the value " +
@@ -140,6 +168,18 @@ func (r *groupResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				Computed:            true,
 				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
+			"roles": grants("Names of the Roles that the Group grants, such as `Review strings`. The provider " +
+				"looks up their IDs with the API token, which needs the `role.view` permission to see Roles " +
+				"outside its own Groups."),
+			"languages": grants("Codes of the Languages that the Group grants, such as `de`. Needs " +
+				"`language_selection = \"manual\"`."),
+			"projects": grants("Slugs of the Projects that the Group grants. Needs `project_selection = " +
+				"\"manual\"` and a Group without `project`. On a Group with `project`, Weblate grants that Project " +
+				"and the provider reads it into this attribute."),
+			"component_lists": grants("Slugs of the Component lists that the Group grants. Needs " +
+				"`project_selection = \"component_list\"` and a Group without `project`."),
+			"components": grants("Slug paths of the Components that the Group grants, such as `docs/guides/api`. " +
+				"On a Group with `project`, only Components of that Project."),
 		},
 	}
 }
@@ -171,12 +211,13 @@ func (r *groupResource) Create(ctx context.Context, req resource.CreateRequest, 
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	planned := popGrants(fields)
 	g, err := r.client.CreateGroup(ctx, r.apiFields(fields))
 	if err != nil {
 		resp.Diagnostics.Append(apiErrorDiagnostic("Creating the Group failed", err))
 		return
 	}
-	r.storeWritten(ctx, req.Config, g, &resp.State, &resp.Diagnostics)
+	r.writeGrantsAndStore(ctx, req.Config, g, planned, &resp.State, &resp.Diagnostics)
 }
 
 func (r *groupResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -194,7 +235,7 @@ func (r *groupResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		resp.Diagnostics.Append(apiErrorDiagnostic("Reading the Group failed", err))
 		return
 	}
-	m, diags := newGroupResourceModel(g)
+	m, diags := newGroupResourceModel(ctx, g, &grantResolver{client: r.client})
 	resp.Diagnostics.Append(diags...)
 	if !resp.Diagnostics.HasError() {
 		resp.Diagnostics.Append(resp.State.Set(ctx, m)...)
@@ -209,6 +250,7 @@ func (r *groupResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	planned := popGrants(fields)
 	var g *client.Group
 	var err error
 	if project, ok := fields["project"]; ok {
@@ -224,6 +266,8 @@ func (r *groupResource) Update(ctx context.Context, req resource.UpdateRequest, 
 			return
 		}
 	}
+	// The PATCH goes first, because Group.save() in Weblate clears Project and Component list Grants depending on
+	// the selection modes.
 	switch {
 	case len(fields) > 0:
 		g, err = r.client.UpdateGroup(ctx, id, r.apiFields(fields))
@@ -234,7 +278,7 @@ func (r *groupResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		resp.Diagnostics.Append(apiErrorDiagnostic("Updating the Group failed", err))
 		return
 	}
-	r.storeWritten(ctx, req.Config, g, &resp.State, &resp.Diagnostics)
+	r.writeGrantsAndStore(ctx, req.Config, g, planned, &resp.State, &resp.Diagnostics)
 }
 
 func projectChangeDiagnostics(g *client.Group, planned string) diag.Diagnostics {
@@ -257,17 +301,22 @@ func projectChangeDiagnostics(g *client.Group, planned string) diag.Diagnostics 
 	return diags
 }
 
-// storeWritten puts the Group that Weblate returned for a create or update into state, also when the read-back check
-// fails, because the write happened.
-func (r *groupResource) storeWritten(ctx context.Context, config tfsdk.Config, g *client.Group, state *tfsdk.State,
-	diags *diag.Diagnostics) {
-	m, d := newGroupResourceModel(g)
-	diags.Append(d...)
-	if diags.HasError() {
+// writeGrantsAndStore writes the planned Grants to g, the Group that Weblate returned for a create or update, and puts
+// the Group into state, also when a Grant or the read-back check fails, because the writes before happened.
+func (r *groupResource) writeGrantsAndStore(ctx context.Context, config tfsdk.Config, g *client.Group,
+	planned map[string][]string, state *tfsdk.State, diags *diag.Diagnostics) {
+	gr := &grantResolver{client: r.client}
+	g, written := gr.writeGrants(ctx, g, planned)
+	diags.Append(written...)
+	if g == nil {
 		return
 	}
-	diags.Append(state.Set(ctx, m)...)
-	if !diags.HasError() {
+	m, d := newGroupResourceModel(ctx, g, gr)
+	if diags.Append(d...); d.HasError() {
+		return
+	}
+	d = state.Set(ctx, m)
+	if diags.Append(d...); !d.HasError() && !written.HasError() {
 		diags.Append(readBackDiagnostics(ctx, config, *state)...)
 	}
 }
