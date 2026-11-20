@@ -38,7 +38,8 @@ releases, and takes every tag that is valid SemVer (`src/internal/provider/build
 error for that version and retries it later, waiting 30 minutes after the first error and twice as long after each
 further one.
 
-The Terraform Registry also accepts pre-release versions.
+The Terraform Registry cannot publish a provider whose only releases are pre-releases: the first publish fails with
+"release is a draft or pre-release". The first version there must be a full release.
 
 Neither OpenTofu nor Terraform selects a pre-release for a range constraint such as `~> 1.0`. To check a pre-release,
 pin it exactly and run `tofu init` and `terraform init` against an empty directory:
