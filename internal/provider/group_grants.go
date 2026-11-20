@@ -268,8 +268,7 @@ func (r *groupResource) ValidateConfig(ctx context.Context, req resource.Validat
 			fmt.Sprintf(`Weblate grants the granted Projects only with project_selection = "manual" and clears them `+
 				`with %s. Set project_selection to "manual" or remove projects.`, m.ProjectSelection))
 	}
-	if !scoped && !m.ComponentLists.IsNull() && !m.ProjectSelection.IsUnknown() &&
-		m.ProjectSelection.ValueString() != "component_list" {
+	if !scoped && !m.ComponentLists.IsNull() && isKnownOtherThan(m.ProjectSelection, "component_list") {
 		resp.Diagnostics.AddAttributeError(path.Root("component_lists"), "Component lists that the Group does not use",
 			`Weblate grants Component lists only with project_selection = "component_list" and clears them `+
 				`otherwise. Set project_selection to "component_list" or remove component_lists.`)

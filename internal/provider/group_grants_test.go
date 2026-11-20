@@ -45,8 +45,6 @@ func TestGroupValidateConfigRejectsGrantsThatTheSelectionIgnores(t *testing.T) {
 			"projects": stringSet("docs")}, "projects", `"manual"`},
 		"component_lists without component_list": {map[string]any{"name": "G", "project_selection": "manual",
 			"component_lists": stringSet("core")}, "component_lists", `"component_list"`},
-		"component_lists with project_selection omitted": {map[string]any{"name": "G",
-			"component_lists": stringSet()}, "component_lists", `"component_list"`},
 		"languages with all": {map[string]any{"name": "G", "language_selection": "all",
 			"languages": stringSet("de")}, "languages", `"manual"`},
 		"projects on a scoped Group": {map[string]any{"name": "G", "project": "docs",
@@ -151,6 +149,7 @@ func TestGroupValidateConfigAcceptsMatchingGrants(t *testing.T) {
 	for name, config := range map[string]map[string]any{
 		"projects with project_selection omitted": {"name": "G", "projects": stringSet("docs")},
 		"projects with manual":                    {"name": "G", "project_selection": "manual", "projects": stringSet()},
+		"component_lists with project_selection omitted": {"name": "G", "component_lists": stringSet("core")},
 		"component_lists with component_list": {"name": "G", "project_selection": "component_list",
 			"component_lists": stringSet("core")},
 		"languages with manual": {"name": "G", "language_selection": "manual", "languages": stringSet("de")},
