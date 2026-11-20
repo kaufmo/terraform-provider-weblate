@@ -2,8 +2,10 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // Project is a Weblate Project with the fields of Weblate's Project serializer that the provider reads. The 12
@@ -34,6 +36,25 @@ type Project struct {
 // ProjectRef returns the API path of the Project with the given slug.
 func ProjectRef(slug string) string {
 	return "projects/" + url.PathEscape(slug) + "/"
+}
+
+// ProjectURL returns the absolute API URL of the Project with the given slug, the form in which Weblate's serializers
+// take a reference to a Project.
+func (c *Client) ProjectURL(slug string) string {
+	return c.apiURL.ResolveReference(&url.URL{Path: ProjectRef(slug)}).String()
+}
+
+// ProjectSlugFromURL returns the slug from the API URL of a Project, such as https://weblate.example/api/projects/docs/.
+func ProjectSlugFromURL(projectURL string) (string, error) {
+	u, err := url.Parse(projectURL)
+	if err != nil {
+		return "", err
+	}
+	segments := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(segments) < 2 || segments[len(segments)-2] != "projects" {
+		return "", fmt.Errorf("%q is not the API URL of a Project", projectURL)
+	}
+	return segments[len(segments)-1], nil
 }
 
 // GetProject reads the Project with the given slug.
