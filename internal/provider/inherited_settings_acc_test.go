@@ -126,6 +126,10 @@ func TestAccInheritedSettings(t *testing.T) {
   inherit_enforced_checks = true`, "", ""),
 				ExpectError: regexp.MustCompile(`Inherited setting with its own value`),
 			},
+			{
+				// The post-test destroy runs with the configuration of the last step, so it must be valid.
+				Config: inheritedSettingsConfig(project, "", "", ""),
+			},
 		},
 	})
 }

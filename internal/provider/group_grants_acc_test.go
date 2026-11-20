@@ -183,6 +183,10 @@ resource "weblate_group" "test" {
 				PlanOnly:    true,
 				ExpectError: regexp.MustCompile(`Projects that the Group does not use`),
 			},
+			{
+				// The post-test destroy runs with the configuration of the last step, so it must be valid.
+				Config: all,
+			},
 		},
 	})
 }
@@ -220,6 +224,10 @@ resource "weblate_group" "test" {
 				Config:      config(`projects = [weblate_project.test.slug]`),
 				PlanOnly:    true,
 				ExpectError: regexp.MustCompile(`Projects on a Group scoped to a Project`),
+			},
+			{
+				// The post-test destroy runs with the configuration of the last step, so it must be valid.
+				Config: config(`roles = ["Review strings"]`),
 			},
 		},
 	})

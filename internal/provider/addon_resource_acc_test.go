@@ -150,6 +150,8 @@ resource "weblate_component" "test" {
   template       = "srt/en.srt"
   file_format    = "srt"
   push_on_commit = false
+  # Without a new_base file, Weblate rejects the default new_lang = "add".
+  new_lang       = "none"
 }
 
 resource "weblate_addon" "test" {

@@ -167,8 +167,10 @@ func (s withoutText) check(v any) error {
 	return err
 }
 
+// CheckPlan leaves out the plan's configuration section, which repeats the literal values of the test configuration.
 func (s withoutText) CheckPlan(_ context.Context, req plancheck.CheckPlanRequest, resp *plancheck.CheckPlanResponse) {
-	resp.Error = s.check(req.Plan)
+	p := req.Plan
+	resp.Error = s.check([]any{p.PlannedValues, p.ResourceChanges, p.ResourceDrift, p.PriorState, p.OutputChanges})
 }
 
 func (s withoutText) CheckState(_ context.Context, req statecheck.CheckStateRequest, resp *statecheck.CheckStateResponse) {
