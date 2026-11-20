@@ -40,8 +40,16 @@ An automation attached to a Component or Project.
 _Avoid_: addon, plugin
 
 **Group**:
-A set of users that is granted Roles on Projects, Languages or Component lists.
+A set of users that holds Grants. A Group either belongs to the whole Weblate instance or is scoped to one Project.
 _Avoid_: team
+
+**Built-in Group**:
+A Group that Weblate creates on its own for every Project, such as Administration or Review.
+_Avoid_: default team, internal group
+
+**Grant**:
+One Role, Project, Language, Component or Component list that a Group gives its users access to.
+_Avoid_: association, permission
 
 **Role**:
 A named set of permissions assigned to a Group.
