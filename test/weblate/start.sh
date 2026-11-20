@@ -44,6 +44,8 @@ Token.objects.filter(user=user).delete()
 Token.objects.create(user=user, key='$token')
 # Weblate's API cannot create the token of another user; the tests add this user to the Groups they need.
 reviewer = User.objects.create(username='reviewer', full_name='Reviewer', email='reviewer@example.com')
+# Weblate creates a token for every new user, and a user has at most one.
+Token.objects.filter(user=reviewer).delete()
 Token.objects.create(user=reviewer, key='$reviewer_token')
 # Weblate's API cannot list or create Workspaces.
 from weblate.workspaces.models import Workspace
