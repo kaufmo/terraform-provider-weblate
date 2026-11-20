@@ -3,7 +3,7 @@
 page_title: "weblate_group Resource - weblate"
 subcategory: ""
 description: |-
-  Manages a Weblate Group: a set of users that holds Grants, either for the whole Weblate instance or scoped to one Project. The Grants are not managed by this resource yet.
+  Manages a Weblate Group: a set of users that holds Grants, either for the whole Weblate instance or scoped to one Project.
   
   Managing Groups needs a User token of a user who may manage Groups; Weblate answers a Project token with 403. An attribute that the configuration omits is not managed: the provider reads it but never changes it. After create and update, the provider compares every configured attribute with the value Weblate stored and fails the apply when they differ.
   
@@ -12,7 +12,7 @@ description: |-
 
 # weblate_group (Resource)
 
-Manages a Weblate Group: a set of users that holds Grants, either for the whole Weblate instance or scoped to one Project. The Grants are not managed by this resource yet.
+Manages a Weblate Group: a set of users that holds Grants, either for the whole Weblate instance or scoped to one Project.
 
 Managing Groups needs a User token of a user who may manage Groups; Weblate answers a Project token with `403`. An attribute that the configuration omits is not managed: the provider reads it but never changes it. After create and update, the provider compares every configured attribute with the value Weblate stored and fails the apply when they differ.
 
@@ -25,12 +25,25 @@ resource "weblate_group" "reviewers" {
   name               = "Reviewers"
   project_selection  = "all_public"
   language_selection = "all"
+  roles              = ["Review strings"]
 }
 
-# A Group scoped to the Project with the slug docs.
+# A Group scoped to the Project with the slug docs. Weblate grants it the Project docs.
 resource "weblate_group" "docs_translators" {
-  name    = "Translators"
-  project = "docs"
+  name       = "Translators"
+  project    = "docs"
+  roles      = ["Power user"]
+  languages  = ["de", "fr"]
+  components = ["docs/guides/api"]
+}
+
+# A Group for the Components of the Component list with the slug core. languages is omitted, so Languages granted
+# in the Weblate UI stay.
+resource "weblate_group" "core" {
+  name              = "Core translators"
+  project_selection = "component_list"
+  component_lists   = ["core"]
+  roles             = ["Translate"]
 }
 ```
 
@@ -43,10 +56,15 @@ resource "weblate_group" "docs_translators" {
 
 ### Optional
 
+- `component_lists` (Set of String) Slugs of the Component lists that the Group grants. Needs `project_selection = "component_list"` and a Group without `project`. When set, even to `[]`, the attribute lists all Grants of its type: Grants added outside OpenTofu show as drift and the next apply removes them. When omitted, the provider reads the Grants but never changes them, and removing the attribute from the configuration leaves the Grants in Weblate.
+- `components` (Set of String) Slug paths of the Components that the Group grants, such as `docs/guides/api`. On a Group with `project`, only Components of that Project. When set, even to `[]`, the attribute lists all Grants of its type: Grants added outside OpenTofu show as drift and the next apply removes them. When omitted, the provider reads the Grants but never changes them, and removing the attribute from the configuration leaves the Grants in Weblate.
 - `enforced_2fa` (Boolean) Whether members of the Group need two-factor authentication.
 - `language_selection` (String) Which Languages the Group grants access to: `manual` only the granted Languages, `all` all Languages. Weblate's default is `manual`.
+- `languages` (Set of String) Codes of the Languages that the Group grants, such as `de`. Needs `language_selection = "manual"`. When set, even to `[]`, the attribute lists all Grants of its type: Grants added outside OpenTofu show as drift and the next apply removes them. When omitted, the provider reads the Grants but never changes them, and removing the attribute from the configuration leaves the Grants in Weblate.
 - `project` (String) Slug of the Project that the Group is scoped to. Without it, the Group belongs to the whole Weblate instance. Weblate cannot move an existing Group to another Project, so changing `project` fails on apply, unless the Project was only renamed. To move a Group, replace it with `-replace`.
 - `project_selection` (String) Which Projects the Group grants access to: `manual` only the granted Projects, `all` all Projects, `all_public` all public Projects, `all_protected` all protected Projects, `component_list` the Projects of the granted Component lists. Weblate sets `manual` on a Group that is scoped to a Project and rejects any change of it. Weblate's default is `manual`.
+- `projects` (Set of String) Slugs of the Projects that the Group grants. Needs `project_selection = "manual"` and a Group without `project`. On a Group with `project`, Weblate grants that Project and the provider reads it into this attribute. When set, even to `[]`, the attribute lists all Grants of its type: Grants added outside OpenTofu show as drift and the next apply removes them. When omitted, the provider reads the Grants but never changes them, and removing the attribute from the configuration leaves the Grants in Weblate.
+- `roles` (Set of String) Names of the Roles that the Group grants, such as `Review strings`. The provider looks up their IDs with the API token, which needs the `role.view` permission to see Roles outside its own Groups. When set, even to `[]`, the attribute lists all Grants of its type: Grants added outside OpenTofu show as drift and the next apply removes them. When omitted, the provider reads the Grants but never changes them, and removing the attribute from the configuration leaves the Grants in Weblate.
 
 ### Read-Only
 
