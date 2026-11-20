@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -448,8 +449,38 @@ func (r *componentResource) Configure(_ context.Context, req resource.ConfigureR
 	}
 }
 
-// ValidateConfig rejects credentials that the provider cannot add to the repository URLs.
+// repoLinkPrefix starts the repo of a Linked Component, followed by the slug path of the Component it links to.
+const repoLinkPrefix = "weblate://"
+
+// linkedRepositorySettings are the attributes that a Linked Component takes from the Component it links to. Weblate
+// returns that Component's values for them and drops or rejects values sent for the Linked Component.
+var linkedRepositorySettings = []string{"push", "branch", "push_branch", "vcs_params", "push_on_commit",
+	"push_on_update", "commit_pending_age", "auto_lock_error"}
+
+// ValidateConfig rejects repository settings of a Linked Component and credentials that the provider cannot add to
+// the repository URLs.
 func (r *componentResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var repo trimmedString
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("repo"), &repo)...)
+	if !repo.IsNull() && !repo.IsUnknown() && strings.HasPrefix(strings.TrimSpace(repo.ValueString()), repoLinkPrefix) {
+		rejected := slices.Clone(linkedRepositorySettings)
+		for name, f := range componentFields {
+			if f.credentials {
+				rejected = slices.AppendSeq(rejected, maps.Keys(credentialAttributes(name)))
+			}
+		}
+		for _, name := range rejected {
+			var v attr.Value
+			resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root(name), &v)...)
+			if v != nil && !v.IsNull() {
+				resp.Diagnostics.AddAttributeError(path.Root(name), "Repository setting of a Linked Component",
+					fmt.Sprintf("With repo = %q, the Component uses the repository of the Component it links to and "+
+						"takes %s from it. Remove %s, or set it on the linked Component.",
+						strings.TrimSpace(repo.ValueString()), name, name))
+			}
+		}
+		return
+	}
 	for name, f := range componentFields {
 		if !f.credentials {
 			continue

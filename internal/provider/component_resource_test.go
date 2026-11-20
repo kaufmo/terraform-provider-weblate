@@ -566,3 +566,38 @@ func TestComponentConfigWithCredentialsInTheWrongPlaceFails(t *testing.T) {
 		})
 	}
 }
+
+var linkedConfig = withAttributes(referenceConfig, map[string]any{"slug": "linked", "name": "Linked",
+	"repo": "weblate://docs/guides/api/reference"})
+
+func TestComponentConfigOfALinkedComponentRejectsRepositorySettings(t *testing.T) {
+	r, s := componentResourceWith(nil)
+	for name, value := range map[string]any{"push": "http://git.example/push.git", "branch": "main",
+		"push_branch": "", "vcs_params": `{}`, "push_on_commit": false, "push_on_update": true,
+		"commit_pending_age": int64(1), "auto_lock_error": false, "repo_username": "bot",
+		"repo_password_wo": "secret", "repo_password_wo_version": int64(1), "push_username": "bot",
+		"push_password_wo": "secret", "push_password_wo_version": int64(1), "": nil} {
+		t.Run(name, func(t *testing.T) {
+			config := linkedConfig
+			if name != "" {
+				config = withAttributes(linkedConfig, map[string]any{name: value})
+			}
+			var resp resource.ValidateConfigResponse
+			r.(resource.ResourceWithValidateConfig).ValidateConfig(context.Background(), resource.ValidateConfigRequest{
+				Config: tfsdk.Config{Schema: s.Schema, Raw: projectValue(s, config)}}, &resp)
+			errs := resp.Diagnostics.Errors()
+			if name == "" {
+				if len(errs) != 0 {
+					t.Errorf("diagnostics = %v, want none", errs)
+				}
+				return
+			}
+			if len(errs) != 1 || !strings.Contains(errs[0].Detail(), "weblate://docs/guides/api/reference") {
+				t.Fatalf("diagnostics = %v, want one error that names the linked repo", errs)
+			}
+			if d, ok := errs[0].(diag.DiagnosticWithPath); !ok || !d.Path().Equal(path.Root(name)) {
+				t.Errorf("error is not at %s: %v", name, errs[0])
+			}
+		})
+	}
+}
