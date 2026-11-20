@@ -1,0 +1,341 @@
+{
+  "image": "weblate/weblate:2026.11.2.0",
+  "pull_s": 1.3,
+  "cold_starts": [
+    {
+      "compose_up": 1.1,
+      "healthz": 28.0,
+      "token": 29.5,
+      "api": 29.5,
+      "api_status": 200
+    },
+    {
+      "compose_up": 1.0,
+      "healthz": 27.3,
+      "token": 28.9,
+      "api": 29.1,
+      "api_status": 200
+    },
+    {
+      "compose_up": 1.1,
+      "healthz": 26.7,
+      "token": 28.3,
+      "api": 28.3,
+      "api_status": 200
+    }
+  ],
+  "component": {
+    "create_project": 201,
+    "create_component": {
+      "status": 201,
+      "seconds": 0.1,
+      "until_translation_exists": 0.5
+    },
+    "api_returns": {
+      "repo": "http://git.proto.test/demo.git",
+      "push": "http://git.proto.test/demo.git"
+    },
+    "stored_after_create": "98 objects imported automatically (use -v 2 for details).\n\n'http://alice:repo-secret@git.proto.test/demo.git' 'http://bob:push-secret@git.proto.test/demo.git'",
+    "patch_name": 200,
+    "stored_after_patch_name": "98 objects imported automatically (use -v 2 for details).\n\n'http://alice:repo-secret@git.proto.test/demo.git' 'http://bob:push-secret@git.proto.test/demo.git'",
+    "patch_urls_without_creds": 200,
+    "stored_after_patch_urls": "98 objects imported automatically (use -v 2 for details).\n\n'http://git.proto.test/demo.git' 'http://git.proto.test/demo.git'"
+  },
+  "schema": {
+    "project_addon_paths": {
+      "/api/components/{project__slug}/{slug}/addons/": [
+        "post"
+      ],
+      "/api/components/{project__slug}/{slug}/addons/kotlin-sdk/builds/": [
+        "post"
+      ],
+      "/api/components/{project__slug}/{slug}/addons/kotlin-sdk/builds/{package}/{version}/": [
+        "get"
+      ],
+      "/api/projects/{slug}/addons/": [
+        "post"
+      ]
+    },
+    "component_lists_methods": [
+      "get",
+      "post"
+    ]
+  },
+  "settings": {
+    "project_keys": [
+      "access_control",
+      "add_message",
+      "addon_message",
+      "agreement",
+      "announcements_url",
+      "autoclean_tm",
+      "categories_url",
+      "changes_list_url",
+      "check_flags",
+      "commit_message",
+      "commit_policy",
+      "components_list_url",
+      "contribute_shared_tm",
+      "contribute_workspace_tm",
+      "delete_message",
+      "effective_add_message",
+      "effective_addon_message",
+      "effective_agreement",
+      "effective_check_flags",
+      "effective_commit_message",
+      "effective_delete_message",
+      "effective_enforced_checks",
+      "effective_language_code_style",
+      "effective_license",
+      "effective_merge_message",
+      "effective_new_lang",
+      "effective_pull_message",
+      "effective_secondary_language",
+      "enable_hooks",
+      "enforced_2fa",
+      "enforced_checks",
+      "id",
+      "inherit_add_message",
+      "inherit_addon_message",
+      "inherit_agreement",
+      "inherit_commit_message",
+      "inherit_delete_message",
+      "inherit_enforced_checks",
+      "inherit_language_code_style",
+      "inherit_license",
+      "inherit_merge_message",
+      "inherit_new_lang",
+      "inherit_pull_message",
+      "inherit_secondary_language",
+      "instructions",
+      "labels_url",
+      "language_aliases",
+      "language_code_style",
+      "languages_url",
+      "license",
+      "lock_url",
+      "locked",
+      "machinery_settings",
+      "merge_message",
+      "metrics_url",
+      "name",
+      "new_lang",
+      "public_sharing",
+      "pull_message",
+      "reports_url",
+      "repository_url",
+      "secondary_language",
+      "slug",
+      "source_review",
+      "statistics_url",
+      "translation_review",
+      "url",
+      "use_shared_tm",
+      "use_workspace_tm",
+      "web",
+      "web_url",
+      "workspace"
+    ],
+    "component_keys": [
+      "add_message",
+      "addon_message",
+      "addons",
+      "agreement",
+      "allow_translation_propagation",
+      "announcements_url",
+      "auto_lock_error",
+      "branch",
+      "category",
+      "changes_list_url",
+      "check_flags",
+      "commit_message",
+      "commit_pending_age",
+      "contribute_project_tm",
+      "delete_message",
+      "edit_template",
+      "effective_add_message",
+      "effective_addon_message",
+      "effective_agreement",
+      "effective_check_flags",
+      "effective_commit_message",
+      "effective_delete_message",
+      "effective_enforced_checks",
+      "effective_language_code_style",
+      "effective_license",
+      "effective_merge_message",
+      "effective_new_lang",
+      "effective_pull_message",
+      "effective_secondary_language",
+      "enable_suggestions",
+      "enforced_checks",
+      "file_format",
+      "file_format_params",
+      "filemask",
+      "git_export",
+      "glossary_color",
+      "hide_glossary_matches",
+      "id",
+      "inherit_add_message",
+      "inherit_addon_message",
+      "inherit_agreement",
+      "inherit_commit_message",
+      "inherit_delete_message",
+      "inherit_enforced_checks",
+      "inherit_language_code_style",
+      "inherit_license",
+      "inherit_merge_message",
+      "inherit_new_lang",
+      "inherit_pull_message",
+      "inherit_secondary_language",
+      "intermediate",
+      "is_glossary",
+      "key_filter",
+      "language_code_style",
+      "language_regex",
+      "license",
+      "license_url",
+      "linked_component",
+      "links_url",
+      "lock_url",
+      "locked",
+      "manage_units",
+      "merge_message",
+      "merge_style",
+      "name",
+      "new_base",
+      "new_lang",
+      "priority",
+      "project",
+      "pull_message",
+      "push",
+      "push_branch",
+      "push_on_commit",
+      "push_on_update",
+      "repo",
+      "report_source_bugs",
+      "reports_url",
+      "repository_url",
+      "repoweb",
+      "repoweb_translations",
+      "restricted",
+      "screenshot_filemask",
+      "secondary_language",
+      "slug",
+      "source_language",
+      "statistics_url",
+      "suggestion_autoaccept",
+      "suggestion_voting",
+      "task_url",
+      "template",
+      "translations_url",
+      "url",
+      "variant_regex",
+      "vcs",
+      "vcs_params",
+      "web_url"
+    ]
+  },
+  "nulls": {
+    "page1": {
+      "count": 2,
+      "next": "http://localhost/api/projects/?page=2&page_size=1",
+      "previous": null
+    },
+    "page2": {
+      "count": 2,
+      "next": null,
+      "previous": "http://localhost/api/projects/?page_size=1"
+    },
+    "component_addon": {
+      "status": 400,
+      "body": {
+        "type": "validation_error",
+        "errors": [
+          {
+            "code": "invalid",
+            "detail": "could not enable add-on weblate.cleanup.generic, not compatible",
+            "attr": "name"
+          }
+        ]
+      }
+    },
+    "project_addon weblate.consistency.languages": {
+      "status": 201,
+      "project": "http://localhost/api/projects/proto/",
+      "component": null
+    },
+    "project_addon weblate.cleanup.generic": {
+      "status": 201,
+      "project": "http://localhost/api/projects/proto/",
+      "component": null
+    },
+    "add_translation_fr": 201,
+    "last_change de": "2026-11-20T07:45:52.397133Z",
+    "last_change fr": "2026-11-20T07:45:57.974596Z"
+  },
+  "groups": {
+    "create_component_list": 201,
+    "create_group": {
+      "status": 201,
+      "body": {
+        "id": 9,
+        "name": "Proto team",
+        "defining_project": null,
+        "defining_workspace": null,
+        "project_selection": 0,
+        "language_selection": 0,
+        "url": "http://localhost/api/groups/9/",
+        "roles": [],
+        "languages": [],
+        "projects": [],
+        "componentlists": [],
+        "components": [],
+        "enforced_2fa": false,
+        "admins": []
+      }
+    },
+    "group_id": 9,
+    "id_fields": {
+      "group": true,
+      "role": true,
+      "project": true,
+      "component": true,
+      "component_list": true
+    },
+    "POST roles role_id": 200,
+    "POST projects project_id": 200,
+    "POST languages language_code": 200,
+    "POST components component_id": 200,
+    "POST componentlists component_list_id": 200,
+    "group_after": {
+      "roles": [
+        "http://localhost/api/roles/1/"
+      ],
+      "projects": [
+        "http://localhost/api/projects/proto/"
+      ],
+      "languages": [
+        "http://localhost/api/languages/de/"
+      ],
+      "components": [
+        "http://localhost/api/components/proto/demo/"
+      ],
+      "componentlists": [
+        "http://localhost/api/component-lists/proto-list/"
+      ]
+    }
+  },
+  "cleanup": {
+    "delete proto2": {
+      "status": 202,
+      "request_s": 0.0,
+      "until_404_s": 0.5
+    },
+    "delete proto": {
+      "status": 202,
+      "request_s": 0.0,
+      "until_404_s": 0.5
+    },
+    "compose_down_s": 3.7
+  }
+}
