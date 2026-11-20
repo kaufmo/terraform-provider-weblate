@@ -123,7 +123,7 @@ func newAddonResourceModel(a *client.Addon) (addonResourceModel, diag.Diagnostic
 	if err != nil {
 		diags.AddError("Weblate returned an unexpected Component or Project", err.Error())
 	}
-	configuration, err := componentField{kind: jsonField}.value(a.Configuration)
+	configuration, err := serializerField{kind: jsonField}.value(a.Configuration)
 	if err != nil {
 		diags.AddAttributeError(path.Root("configuration"), "Unexpected value from Weblate",
 			fmt.Sprintf("Weblate returned %s for configuration: %s.", a.Configuration, err))

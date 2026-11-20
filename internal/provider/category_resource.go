@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
@@ -19,9 +20,10 @@ import (
 )
 
 var (
-	_ resource.ResourceWithConfigure   = &categoryResource{}
-	_ resource.ResourceWithImportState = &categoryResource{}
-	_ resource.ResourceWithModifyPlan  = &categoryResource{}
+	_ resource.ResourceWithConfigure      = &categoryResource{}
+	_ resource.ResourceWithImportState    = &categoryResource{}
+	_ resource.ResourceWithModifyPlan     = &categoryResource{}
+	_ resource.ResourceWithValidateConfig = &categoryResource{}
 )
 
 type categoryResource struct {
@@ -36,10 +38,12 @@ type categoryResourceModel struct {
 	Name      trimmedString  `tfsdk:"name"`
 	Slug      trimmedString  `tfsdk:"slug"`
 	Timeouts  timeouts.Value `tfsdk:"timeouts"`
+	inheritedSettingsModel
 }
 
-func newCategoryResourceModel(c *client.Category, slugPath string, t timeouts.Value) categoryResourceModel {
+func newCategoryResourceModel(ctx context.Context, c *client.Category, slugPath string, t timeouts.Value) (categoryResourceModel, diag.Diagnostics) {
 	project, _, _ := strings.Cut(slugPath, "/")
+	inherited, diags := newInheritedSettingsModel(ctx, c.Fields)
 	return categoryResourceModel{
 		ID:        types.StringValue(slugPath),
 		WeblateID: types.Int64Value(c.ID),
@@ -48,7 +52,9 @@ func newCategoryResourceModel(c *client.Category, slugPath string, t timeouts.Va
 		Name:      trimmedStringValue(c.Name),
 		Slug:      trimmedStringValue(c.Slug),
 		Timeouts:  t,
-	}
+
+		inheritedSettingsModel: inherited,
+	}, diags
 }
 
 // NewCategoryResource returns the weblate_category resource.
@@ -61,46 +67,15 @@ func (r *categoryResource) Metadata(_ context.Context, req resource.MetadataRequ
 }
 
 func (r *categoryResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+	attributes := inheritedSettingAttributes()
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Manages a Weblate Category, a folder inside a Project that groups Components. " +
 			"Categories can nest up to three levels deep.\n\n" +
 			"Changing `name` or `slug` renames the Category in place, and changing `category` moves it in place. " +
 			"Weblate cannot move a Category to another Project, so changing `project` to another Project fails on " +
 			"apply. When `project` changes because the Project was renamed, only the state changes. Delete waits " +
-			"until Weblate has removed the Category in the background.",
-		Attributes: map[string]schema.Attribute{
-			"id": schema.StringAttribute{
-				MarkdownDescription: "The slug path of the Category: the Project slug and the slugs of all " +
-					"Categories down to this one, joined by `/`, such as `docs/guides`.",
-				Computed: true,
-			},
-			"weblate_id": schema.Int64Attribute{
-				MarkdownDescription: "Numeric ID that Weblate gave the Category. It stays the same when the " +
-					"Category is renamed or moved.",
-				Computed:      true,
-				PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-			},
-			"project": schema.StringAttribute{
-				MarkdownDescription: "Slug of the Project that holds the Category.",
-				Required:            true,
-			},
-			"category": schema.StringAttribute{
-				MarkdownDescription: "`id` of the parent Category, which is its slug path and must start with " +
-					"`project`. Without it, the Category is at the root of the Project.",
-				Optional: true,
-			},
-			"name": schema.StringAttribute{
-				MarkdownDescription: "Display name of the Category. Unique among the Categories with the same parent.",
-				CustomType:          trimmedStringType{},
-				Required:            true,
-			},
-			"slug": schema.StringAttribute{
-				MarkdownDescription: "Slug of the Category, as in its URL. Unique among the Categories with the " +
-					"same parent.",
-				CustomType: trimmedStringType{},
-				Required:   true,
-			},
-		},
+			"until Weblate has removed the Category in the background.\n\n" + inheritedSettingsDescription,
+		Attributes: attributes,
 		Blocks: map[string]schema.Block{
 			"timeouts": timeouts.Block(ctx, timeouts.Opts{
 				Delete: true,
@@ -109,6 +84,39 @@ func (r *categoryResource) Schema(ctx context.Context, _ resource.SchemaRequest,
 			}),
 		},
 	}
+	maps.Copy(attributes, map[string]schema.Attribute{
+		"id": schema.StringAttribute{
+			MarkdownDescription: "The slug path of the Category: the Project slug and the slugs of all " +
+				"Categories down to this one, joined by `/`, such as `docs/guides`.",
+			Computed: true,
+		},
+		"weblate_id": schema.Int64Attribute{
+			MarkdownDescription: "Numeric ID that Weblate gave the Category. It stays the same when the " +
+				"Category is renamed or moved.",
+			Computed:      true,
+			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
+		},
+		"project": schema.StringAttribute{
+			MarkdownDescription: "Slug of the Project that holds the Category.",
+			Required:            true,
+		},
+		"category": schema.StringAttribute{
+			MarkdownDescription: "`id` of the parent Category, which is its slug path and must start with " +
+				"`project`. Without it, the Category is at the root of the Project.",
+			Optional: true,
+		},
+		"name": schema.StringAttribute{
+			MarkdownDescription: "Display name of the Category. Unique among the Categories with the same parent.",
+			CustomType:          trimmedStringType{},
+			Required:            true,
+		},
+		"slug": schema.StringAttribute{
+			MarkdownDescription: "Slug of the Category, as in its URL. Unique among the Categories with the " +
+				"same parent.",
+			CustomType: trimmedStringType{},
+			Required:   true,
+		},
+	})
 }
 
 func (r *categoryResource) Configure(_ context.Context, req resource.ConfigureRequest, _ *resource.ConfigureResponse) {
@@ -117,16 +125,23 @@ func (r *categoryResource) Configure(_ context.Context, req resource.ConfigureRe
 	}
 }
 
-// ModifyPlan rejects a parent Category outside the Project and plans id as the new slug path.
+func (r *categoryResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	resp.Diagnostics.Append(validateInheritedSettings(ctx, req.Config)...)
+}
+
+// ModifyPlan rejects a parent Category outside the Project and plans id as the new slug path and the
+// inherit_<setting> flags.
 func (r *categoryResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if !req.Plan.Raw.IsNull() {
 		planSlugPath(ctx, resp)
+		resp.Diagnostics.Append(planInheritedSettings(ctx, req.Config, &resp.Plan)...)
 	}
 }
 
 func (r *categoryResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	fields, diags := fieldsToWrite(ctx, req.Config, req.Plan, nil)
 	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(sendInheritedSettings(ctx, req.Config, req.Plan, nil, fields)...)
 	var plan categoryResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
@@ -170,6 +185,7 @@ func (r *categoryResource) Read(ctx context.Context, req resource.ReadRequest, r
 func (r *categoryResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	fields, diags := fieldsToWrite(ctx, req.Config, req.Plan, &req.State)
 	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(sendInheritedSettings(ctx, req.Config, req.Plan, &req.State, fields)...)
 	var plan, state categoryResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
@@ -231,7 +247,10 @@ func (r *categoryResource) store(ctx context.Context, c *client.Category, t time
 		diags.Append(apiErrorDiagnostic("Reading the parent Categories failed", err))
 		return
 	}
-	diags.Append(state.Set(ctx, newCategoryResourceModel(c, slugPath, t))...)
+	model, d := newCategoryResourceModel(ctx, c, slugPath, t)
+	if diags.Append(d...); !diags.HasError() {
+		diags.Append(state.Set(ctx, model)...)
+	}
 }
 
 func (r *categoryResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {

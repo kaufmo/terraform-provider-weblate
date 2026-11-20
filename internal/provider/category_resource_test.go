@@ -277,7 +277,8 @@ func modifyCategoryPlan(t *testing.T, plan map[string]any) resource.ModifyPlanRe
 	r, s := categoryResourceWith(nil)
 	p := tfsdk.Plan{Schema: s.Schema, Raw: projectValue(s, plan)}
 	resp := resource.ModifyPlanResponse{Plan: p}
-	r.(resource.ResourceWithModifyPlan).ModifyPlan(context.Background(), resource.ModifyPlanRequest{Plan: p}, &resp)
+	r.(resource.ResourceWithModifyPlan).ModifyPlan(context.Background(), resource.ModifyPlanRequest{Plan: p,
+		Config: tfsdk.Config{Schema: s.Schema, Raw: p.Raw}}, &resp)
 	return resp
 }
 

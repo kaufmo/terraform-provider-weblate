@@ -253,7 +253,8 @@ func TestProjectPlanSetsIDToTheNewSlug(t *testing.T) {
 	plan := tfsdk.Plan{Schema: s.Schema, Raw: projectValue(s, map[string]any{"id": tftypes.UnknownValue,
 		"slug": "guides"})}
 	resp := resource.ModifyPlanResponse{Plan: plan}
-	r.(resource.ResourceWithModifyPlan).ModifyPlan(context.Background(), resource.ModifyPlanRequest{Plan: plan}, &resp)
+	r.(resource.ResourceWithModifyPlan).ModifyPlan(context.Background(), resource.ModifyPlanRequest{Plan: plan,
+		Config: tfsdk.Config{Schema: s.Schema, Raw: plan.Raw}}, &resp)
 	if resp.Diagnostics.HasError() {
 		t.Fatalf("ModifyPlan: %v", resp.Diagnostics)
 	}

@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,9 +26,10 @@ import (
 const defaultTimeout = 20 * time.Minute
 
 var (
-	_ resource.ResourceWithConfigure   = &projectResource{}
-	_ resource.ResourceWithImportState = &projectResource{}
-	_ resource.ResourceWithModifyPlan  = &projectResource{}
+	_ resource.ResourceWithConfigure      = &projectResource{}
+	_ resource.ResourceWithImportState    = &projectResource{}
+	_ resource.ResourceWithModifyPlan     = &projectResource{}
+	_ resource.ResourceWithValidateConfig = &projectResource{}
 )
 
 type projectResource struct {
@@ -56,33 +59,36 @@ type projectResourceModel struct {
 	AutocleanTM           types.Bool     `tfsdk:"autoclean_tm"`
 	Enforced2FA           types.Bool     `tfsdk:"enforced_2fa"`
 	Timeouts              timeouts.Value `tfsdk:"timeouts"`
+	inheritedSettingsModel
 }
 
-func newProjectResourceModel(p *client.Project, t timeouts.Value) projectResourceModel {
+func newProjectResourceModel(ctx context.Context, p *client.Project, t timeouts.Value) (projectResourceModel, diag.Diagnostics) {
+	inherited, diags := newInheritedSettingsModel(ctx, p.Fields)
 	return projectResourceModel{
-		ID:                    types.StringValue(p.Slug),
-		WeblateID:             types.Int64Value(p.ID),
-		Slug:                  trimmedStringValue(p.Slug),
-		Name:                  trimmedStringValue(p.Name),
-		Web:                   trimmedStringValue(p.Web),
-		Instructions:          trimmedStringValue(p.Instructions),
-		Workspace:             trimmedStringPointerValue(p.Workspace),
-		CheckFlags:            trimmedStringValue(p.CheckFlags),
-		TranslationReview:     types.BoolValue(p.TranslationReview),
-		SourceReview:          types.BoolValue(p.SourceReview),
-		CommitPolicy:          types.Int64Value(p.CommitPolicy),
-		EnableHooks:           types.BoolValue(p.EnableHooks),
-		LanguageAliases:       trimmedStringValue(p.LanguageAliases),
-		AccessControl:         types.Int64Value(p.AccessControl),
-		PublicSharing:         types.BoolValue(p.PublicSharing),
-		UseSharedTM:           types.BoolValue(p.UseSharedTM),
-		ContributeSharedTM:    types.BoolValue(p.ContributeSharedTM),
-		UseWorkspaceTM:        types.BoolValue(p.UseWorkspaceTM),
-		ContributeWorkspaceTM: types.BoolValue(p.ContributeWorkspaceTM),
-		AutocleanTM:           types.BoolValue(p.AutocleanTM),
-		Enforced2FA:           types.BoolValue(p.Enforced2FA),
-		Timeouts:              t,
-	}
+		ID:                     types.StringValue(p.Slug),
+		WeblateID:              types.Int64Value(p.ID),
+		Slug:                   trimmedStringValue(p.Slug),
+		Name:                   trimmedStringValue(p.Name),
+		Web:                    trimmedStringValue(p.Web),
+		Instructions:           trimmedStringValue(p.Instructions),
+		Workspace:              trimmedStringPointerValue(p.Workspace),
+		CheckFlags:             trimmedStringValue(p.CheckFlags),
+		TranslationReview:      types.BoolValue(p.TranslationReview),
+		SourceReview:           types.BoolValue(p.SourceReview),
+		CommitPolicy:           types.Int64Value(p.CommitPolicy),
+		EnableHooks:            types.BoolValue(p.EnableHooks),
+		LanguageAliases:        trimmedStringValue(p.LanguageAliases),
+		AccessControl:          types.Int64Value(p.AccessControl),
+		PublicSharing:          types.BoolValue(p.PublicSharing),
+		UseSharedTM:            types.BoolValue(p.UseSharedTM),
+		ContributeSharedTM:     types.BoolValue(p.ContributeSharedTM),
+		UseWorkspaceTM:         types.BoolValue(p.UseWorkspaceTM),
+		ContributeWorkspaceTM:  types.BoolValue(p.ContributeWorkspaceTM),
+		AutocleanTM:            types.BoolValue(p.AutocleanTM),
+		Enforced2FA:            types.BoolValue(p.Enforced2FA),
+		Timeouts:               t,
+		inheritedSettingsModel: inherited,
+	}, diags
 }
 
 // NewProjectResource returns the weblate_project resource.
@@ -114,6 +120,7 @@ func (r *projectResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 		}
 	}
+	attributes := inheritedSettingAttributes()
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Manages a Weblate Project.\n\n" +
 			"Weblate strips leading and trailing whitespace from every string, so a value that differs from the " +
@@ -123,51 +130,9 @@ func (r *projectResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			"update, the provider compares every configured attribute with the value Weblate stored and fails the " +
 			"apply when they differ.\n\n" +
 			"Changing `name` or `slug` renames the Project in place. Delete waits until Weblate has removed the " +
-			"Project in the background.",
-		Attributes: map[string]schema.Attribute{
-			"id": schema.StringAttribute{
-				MarkdownDescription: "The slug of the Project.",
-				Computed:            true,
-			},
-			"weblate_id": schema.Int64Attribute{
-				MarkdownDescription: "Numeric ID that Weblate gave the Project. It stays the same when the Project " +
-					"is renamed, which lets the provider find a Project that was renamed outside OpenTofu.",
-				Computed:      true,
-				PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-			},
-			"name": schema.StringAttribute{
-				MarkdownDescription: "Display name of the Project. Unique in the Weblate instance.",
-				CustomType:          trimmedStringType{},
-				Required:            true,
-			},
-			"slug": schema.StringAttribute{
-				MarkdownDescription: "Slug of the Project, as in its URL. Unique in the Weblate instance.",
-				CustomType:          trimmedStringType{},
-				Required:            true,
-			},
-			"web": str("URL of the project website. Most Weblate instances require it; " +
-				"`WEBSITE_REQUIRED = False` in the Weblate settings makes it optional."),
-			"instructions": str("Instructions for translators."),
-			"workspace":    str("UUID of the Workspace the Project belongs to."),
-			"check_flags":  str("Translation flags that customize the quality checks of the whole Project."),
-			"translation_review": boolean("Whether translations need a review by a reviewer before they are " +
-				"approved."),
-			"source_review": boolean("Whether source strings need a review."),
-			"commit_policy": number("Which translations Weblate commits: `0` all, `20` all except those that " +
-				"need editing, `30` only approved ones."),
-			"enable_hooks":     boolean("Whether repository notification hooks can update the Project."),
-			"language_aliases": str("Language code mappings, such as `zh_CN:zh-Hans,en_US:en`."),
-			"access_control": number("Access control mode: `0` public, `1` protected, `100` private, " +
-				"`200` custom. Weblate lets only superusers create a Project with a mode other than the default " +
-				"of the instance."),
-			"public_sharing":          boolean("Whether the Project can be shared publicly."),
-			"use_shared_tm":           boolean("Whether the Project uses the shared translation memory."),
-			"contribute_shared_tm":    boolean("Whether the Project contributes to the shared translation memory."),
-			"use_workspace_tm":        boolean("Whether the Project uses the translation memory of its Workspace."),
-			"contribute_workspace_tm": boolean("Whether the Project contributes to the translation memory of its Workspace."),
-			"autoclean_tm":            boolean("Whether Weblate removes outdated entries from the Project's translation memory."),
-			"enforced_2fa":            boolean("Whether contributors need two-factor authentication."),
-		},
+			"Project in the background.\n\n" + inheritedSettingsDescription + " A Project inherits only from its " +
+			"Workspace, so `inherit_<setting> = true` fails at plan when `workspace` is null.",
+		Attributes: attributes,
 		Blocks: map[string]schema.Block{
 			"timeouts": timeouts.Block(ctx, timeouts.Opts{
 				Delete: true,
@@ -176,6 +141,50 @@ func (r *projectResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			}),
 		},
 	}
+	maps.Copy(attributes, map[string]schema.Attribute{
+		"id": schema.StringAttribute{
+			MarkdownDescription: "The slug of the Project.",
+			Computed:            true,
+		},
+		"weblate_id": schema.Int64Attribute{
+			MarkdownDescription: "Numeric ID that Weblate gave the Project. It stays the same when the Project " +
+				"is renamed, which lets the provider find a Project that was renamed outside OpenTofu.",
+			Computed:      true,
+			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
+		},
+		"name": schema.StringAttribute{
+			MarkdownDescription: "Display name of the Project. Unique in the Weblate instance.",
+			CustomType:          trimmedStringType{},
+			Required:            true,
+		},
+		"slug": schema.StringAttribute{
+			MarkdownDescription: "Slug of the Project, as in its URL. Unique in the Weblate instance.",
+			CustomType:          trimmedStringType{},
+			Required:            true,
+		},
+		"web": str("URL of the project website. Most Weblate instances require it; " +
+			"`WEBSITE_REQUIRED = False` in the Weblate settings makes it optional."),
+		"instructions": str("Instructions for translators."),
+		"workspace":    str("UUID of the Workspace the Project belongs to."),
+		"check_flags":  str("Translation flags that customize the quality checks of the whole Project."),
+		"translation_review": boolean("Whether translations need a review by a reviewer before they are " +
+			"approved."),
+		"source_review": boolean("Whether source strings need a review."),
+		"commit_policy": number("Which translations Weblate commits: `0` all, `20` all except those that " +
+			"need editing, `30` only approved ones."),
+		"enable_hooks":     boolean("Whether repository notification hooks can update the Project."),
+		"language_aliases": str("Language code mappings, such as `zh_CN:zh-Hans,en_US:en`."),
+		"access_control": number("Access control mode: `0` public, `1` protected, `100` private, " +
+			"`200` custom. Weblate lets only superusers create a Project with a mode other than the default " +
+			"of the instance."),
+		"public_sharing":          boolean("Whether the Project can be shared publicly."),
+		"use_shared_tm":           boolean("Whether the Project uses the shared translation memory."),
+		"contribute_shared_tm":    boolean("Whether the Project contributes to the shared translation memory."),
+		"use_workspace_tm":        boolean("Whether the Project uses the translation memory of its Workspace."),
+		"contribute_workspace_tm": boolean("Whether the Project contributes to the translation memory of its Workspace."),
+		"autoclean_tm":            boolean("Whether Weblate removes outdated entries from the Project's translation memory."),
+		"enforced_2fa":            boolean("Whether contributors need two-factor authentication."),
+	})
 }
 
 func (r *projectResource) Configure(_ context.Context, req resource.ConfigureRequest, _ *resource.ConfigureResponse) {
@@ -185,10 +194,28 @@ func (r *projectResource) Configure(_ context.Context, req resource.ConfigureReq
 	}
 }
 
-// ModifyPlan plans id as the new slug, so a rename shows the new id instead of "known after apply".
+func (r *projectResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	resp.Diagnostics.Append(validateInheritedSettings(ctx, req.Config)...)
+}
+
+// ModifyPlan plans id as the new slug, so a rename shows the new id instead of "known after apply", and the
+// inherit_<setting> flags. It rejects inherit_<setting> = true without a Workspace, because a Project inherits only
+// from its Workspace and Weblate stores the flag without an effect.
 func (r *projectResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if req.Plan.Raw.IsNull() {
 		return
+	}
+	resp.Diagnostics.Append(planInheritedSettings(ctx, req.Config, &resp.Plan)...)
+	if workspaceKnownNull(ctx, req, &resp.Diagnostics) {
+		for _, name := range slices.Sorted(maps.Keys(inheritedSettings)) {
+			var inherit types.Bool
+			resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("inherit_"+name), &inherit)...)
+			if inherit.ValueBool() {
+				resp.Diagnostics.AddAttributeError(path.Root("inherit_"+name), "Inheritance without a Workspace",
+					fmt.Sprintf("A Project inherits only from its Workspace, and this Project has none. Set "+
+						"workspace, or set %s instead of inherit_%s.", name, name))
+			}
+		}
 	}
 	var slug trimmedString
 	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("slug"), &slug)...)
@@ -198,9 +225,21 @@ func (r *projectResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("id"), strings.TrimSpace(slug.ValueString()))...)
 }
 
+// workspaceKnownNull reports whether the planned Project has no Workspace. With workspace omitted, a new Project
+// gets none, and an existing one keeps the Workspace in state.
+func workspaceKnownNull(ctx context.Context, req resource.ModifyPlanRequest, diags *diag.Diagnostics) bool {
+	var configured, prior trimmedString
+	diags.Append(req.Config.GetAttribute(ctx, path.Root("workspace"), &configured)...)
+	if !req.State.Raw.IsNull() {
+		diags.Append(req.State.GetAttribute(ctx, path.Root("workspace"), &prior)...)
+	}
+	return configured.IsNull() && prior.IsNull()
+}
+
 func (r *projectResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	fields, diags := fieldsToWrite(ctx, req.Config, req.Plan, nil)
 	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(sendInheritedSettings(ctx, req.Config, req.Plan, nil, fields)...)
 	var t timeouts.Value
 	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("timeouts"), &t)...)
 	if resp.Diagnostics.HasError() {
@@ -234,12 +273,17 @@ func (r *projectResource) Read(ctx context.Context, req resource.ReadRequest, re
 		resp.State.RemoveResource(ctx)
 		return
 	}
-	resp.Diagnostics.Append(resp.State.Set(ctx, newProjectResourceModel(p, state.Timeouts))...)
+	model, diags := newProjectResourceModel(ctx, p, state.Timeouts)
+	resp.Diagnostics.Append(diags...)
+	if !resp.Diagnostics.HasError() {
+		resp.Diagnostics.Append(resp.State.Set(ctx, model)...)
+	}
 }
 
 func (r *projectResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	fields, diags := fieldsToWrite(ctx, req.Config, req.Plan, &req.State)
 	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(sendInheritedSettings(ctx, req.Config, req.Plan, &req.State, fields)...)
 	var slug types.String
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &slug)...)
 	var t timeouts.Value
@@ -266,7 +310,11 @@ func (r *projectResource) Update(ctx context.Context, req resource.UpdateRequest
 // check fails, because the write happened.
 func (r *projectResource) storeWritten(ctx context.Context, config tfsdk.Config, p *client.Project, t timeouts.Value,
 	state *tfsdk.State, diags *diag.Diagnostics) {
-	diags.Append(state.Set(ctx, newProjectResourceModel(p, t))...)
+	model, d := newProjectResourceModel(ctx, p, t)
+	if diags.Append(d...); diags.HasError() {
+		return
+	}
+	diags.Append(state.Set(ctx, model)...)
 	if !diags.HasError() {
 		diags.Append(readBackDiagnostics(ctx, config, *state)...)
 	}

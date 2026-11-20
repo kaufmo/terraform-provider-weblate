@@ -336,7 +336,7 @@ func modifyComponentPlan(t *testing.T, state, plan map[string]any) resource.Modi
 	}
 	resp := resource.ModifyPlanResponse{Plan: p}
 	r.(resource.ResourceWithModifyPlan).ModifyPlan(context.Background(),
-		resource.ModifyPlanRequest{Plan: p, State: st}, &resp)
+		resource.ModifyPlanRequest{Plan: p, State: st, Config: tfsdk.Config{Schema: s.Schema, Raw: p.Raw}}, &resp)
 	return resp
 }
 

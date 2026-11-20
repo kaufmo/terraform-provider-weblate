@@ -65,6 +65,15 @@ func jsonValue(ctx context.Context, p path.Path, v attr.Value) (any, diag.Diagno
 	case basetypes.Int64Valuable:
 		i, diags := v.ToInt64Value(ctx)
 		return i.ValueInt64(), diags
+	case basetypes.SetValuable:
+		set, diags := v.ToSetValue(ctx)
+		elements := []any{}
+		for _, element := range set.Elements() {
+			value, d := jsonValue(ctx, p, element)
+			diags.Append(d...)
+			elements = append(elements, value)
+		}
+		return elements, diags
 	}
 	var diags diag.Diagnostics
 	diags.AddAttributeError(p, "Unsupported attribute type",

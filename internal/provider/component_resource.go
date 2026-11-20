@@ -21,6 +21,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -43,12 +44,13 @@ const (
 	boolField
 	int64Field
 	jsonField
+	stringSetField
 )
 
-// componentField is an attribute of weblate_component that maps one to one to the field of the same name in
-// Weblate's Component serializer. Without required or computed, the attribute is Optional and Computed: Weblate has
-// a default for it, and an omitted attribute is not managed.
-type componentField struct {
+// serializerField is an attribute that maps one to one to the field of the same name in Weblate's serializer of
+// the object, such as the Component serializer. Without required or computed, the attribute is Optional and
+// Computed: Weblate has a default for it, and an omitted attribute is not managed.
+type serializerField struct {
 	kind        fieldKind
 	description string
 	required    bool
@@ -60,7 +62,7 @@ type componentField struct {
 	credentials bool
 }
 
-var componentFields = map[string]componentField{
+var componentFields = withInheritedSettings(map[string]serializerField{
 	"name": {kind: stringField, required: true, description: "Display name of the Component. Unique in the Project."},
 	"slug": {kind: stringField, required: true, description: "Slug of the Component, as in its URL. Unique in the Project."},
 	"repo": {kind: stringField, required: true, credentials: true, description: "URL of the repository that " +
@@ -132,9 +134,14 @@ var componentFields = map[string]componentField{
 	"variant_regex":  {kind: stringField, description: "Regular expression that finds the variants of a string."},
 	"is_glossary":    {kind: boolField, description: "Whether the Component is a glossary."},
 	"glossary_color": {kind: stringField, description: "Color of a glossary, such as `silver`, the default."},
+})
+
+func withInheritedSettings(fields map[string]serializerField) map[string]serializerField {
+	maps.Copy(fields, inheritedSettingFields)
+	return fields
 }
 
-func (f componentField) attribute() schema.Attribute {
+func (f serializerField) attribute() schema.Attribute {
 	optional := !f.required && !f.computed
 	computed := !f.required
 	switch f.kind {
@@ -150,6 +157,13 @@ func (f componentField) attribute() schema.Attribute {
 			Computed: computed}
 		if optional {
 			a.PlanModifiers = []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}
+		}
+		return a
+	case stringSetField:
+		a := schema.SetAttribute{MarkdownDescription: f.description, ElementType: types.StringType,
+			Required: f.required, Optional: optional, Computed: computed}
+		if optional {
+			a.PlanModifiers = []planmodifier.Set{setplanmodifier.UseStateForUnknown()}
 		}
 		return a
 	}
@@ -168,7 +182,7 @@ func (f componentField) attribute() schema.Attribute {
 }
 
 // value converts the field from a Weblate response into the attribute value. A missing field is null.
-func (f componentField) value(raw json.RawMessage) (attr.Value, error) {
+func (f serializerField) value(raw json.RawMessage) (attr.Value, error) {
 	if len(raw) == 0 {
 		raw = json.RawMessage("null")
 	}
@@ -181,6 +195,16 @@ func (f componentField) value(raw json.RawMessage) (attr.Value, error) {
 		var i *int64
 		err := json.Unmarshal(raw, &i)
 		return types.Int64PointerValue(i), err
+	case stringSetField:
+		var elements []string
+		if err := json.Unmarshal(raw, &elements); err != nil || elements == nil {
+			return types.SetNull(types.StringType), err
+		}
+		set, diags := types.SetValueFrom(context.Background(), types.StringType, elements)
+		if diags.HasError() {
+			return set, fmt.Errorf("%v", diags)
+		}
+		return set, nil
 	case jsonField:
 		var v any
 		d := json.NewDecoder(bytes.NewReader(raw))
@@ -434,6 +458,7 @@ func (r *componentResource) Schema(ctx context.Context, _ resource.SchemaRequest
 			"with the credentials from the configuration; the same applies to `push`. After an import, or when " +
 			"the credentials were set in the Weblate UI, the first change of `repo` without `repo_password_wo` " +
 			"deletes the stored credentials.\n\n" +
+			inheritedSettingsDescription + "\n\n" +
 			"Weblate adds objects of its own on create, which the provider ignores unless the configuration " +
 			"declares them: it installs Add-ons that depend on the file format and the `DEFAULT_ADDONS` setting, " +
 			"and for the first Component of a Project it creates a glossary Component with the slug `glossary`, " +
@@ -477,9 +502,10 @@ var linkedRepositorySettings = []string{"push", "branch", "push_branch", "vcs_pa
 var hiddenWithoutVCSView = []string{"vcs", "vcs_params", "repo", "branch", "filemask", "screenshot_filemask", "push",
 	"git_export", "push_branch", "repoweb", "repoweb_translations", "linked_component"}
 
-// ValidateConfig rejects repository settings of a Linked Component and credentials that the provider cannot add to
-// the repository URLs.
+// ValidateConfig rejects an Inherited setting with its own value, repository settings of a Linked Component and
+// credentials that the provider cannot add to the repository URLs.
 func (r *componentResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	resp.Diagnostics.Append(validateInheritedSettings(ctx, req.Config)...)
 	var repo trimmedString
 	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("repo"), &repo)...)
 	if !repo.IsNull() && !repo.IsUnknown() && strings.HasPrefix(strings.TrimSpace(repo.ValueString()), repoLinkPrefix) {
@@ -538,12 +564,14 @@ func (r *componentResource) ValidateConfig(ctx context.Context, req resource.Val
 	}
 }
 
-// ModifyPlan plans id as the new slug path and rejects a change of source_language, which Weblate refuses.
+// ModifyPlan plans id as the new slug path and the inherit_<setting> flags, and rejects a change of
+// source_language, which Weblate refuses.
 func (r *componentResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if req.Plan.Raw.IsNull() {
 		return
 	}
 	planSlugPath(ctx, resp)
+	resp.Diagnostics.Append(planInheritedSettings(ctx, req.Config, &resp.Plan)...)
 	if req.State.Raw.IsNull() {
 		return
 	}
@@ -563,6 +591,7 @@ func (r *componentResource) Create(ctx context.Context, req resource.CreateReque
 	fields, diags := fieldsToWrite(ctx, req.Config, req.Plan, nil)
 	resp.Diagnostics.Append(diags...)
 	resp.Diagnostics.Append(sendCredentials(ctx, req.Config, req.Plan, nil, fields)...)
+	resp.Diagnostics.Append(sendInheritedSettings(ctx, req.Config, req.Plan, nil, fields)...)
 	var project, category types.String
 	var t timeouts.Value
 	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("project"), &project)...)
@@ -737,6 +766,7 @@ func (r *componentResource) Update(ctx context.Context, req resource.UpdateReque
 	fields, diags := fieldsToWrite(ctx, req.Config, req.Plan, &req.State)
 	resp.Diagnostics.Append(diags...)
 	resp.Diagnostics.Append(sendCredentials(ctx, req.Config, req.Plan, &req.State, fields)...)
+	resp.Diagnostics.Append(sendInheritedSettings(ctx, req.Config, req.Plan, &req.State, fields)...)
 	var id, project, planProject, category, planCategory types.String
 	var weblateID types.Int64
 	var t timeouts.Value
