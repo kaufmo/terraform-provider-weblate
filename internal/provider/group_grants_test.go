@@ -137,11 +137,55 @@ func TestGroupReadWritesTheGrantsByName(t *testing.T) {
 	}
 }
 
-func TestGroupReadFailsOnARoleThatTheTokenCannotSee(t *testing.T) {
-	group := strings.Replace(groupWithGrants, "/roles/3/", "/roles/5/", 1)
-	resp := readGroupResource(t, grantsWeblate("", group), map[string]any{"id": "12"})
+const groupWithAHiddenRole = `{"id": 12, "name": "Translators", "defining_project": null, "project_selection": 0,
+	"language_selection": 0, "enforced_2fa": false,
+	"roles": ["https://weblate.example/api/roles/3/", "https://weblate.example/api/roles/5/"]}`
+
+func TestGroupReadSkipsARoleThatTheTokenCannotSeeWhenRolesAreOmitted(t *testing.T) {
+	resp := readGroupResource(t, grantsWeblate("", groupWithAHiddenRole), map[string]any{"id": "12"})
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Read: %v", resp.Diagnostics)
+	}
+	if warnings := resp.Diagnostics.Warnings(); len(warnings) != 1 || !strings.Contains(warnings[0].Detail(), "role.view") {
+		t.Errorf("diagnostics = %v, want one warning that names role.view", resp.Diagnostics)
+	}
+	if roles := setAttribute(t, resp.State, "roles"); !slices.Equal(roles, []string{"Review strings"}) {
+		t.Errorf("roles = %v, want only the visible Role", roles)
+	}
+}
+
+func TestGroupReadFailsOnARoleThatTheTokenCannotSeeWhenRolesAreSet(t *testing.T) {
+	c, _ := fakeWeblate(t, grantsWeblate("", groupWithAHiddenRole))
+	r, s := groupResourceWith(c)
+	ctx := context.Background()
+	resp := resource.ReadResponse{State: tfsdk.State{Schema: s.Schema, Raw: projectValue(s, map[string]any{"id": "12"})}}
+	newPrivate(&resp.Private)
+	// Create and update record a configuration that sets roles.
+	resp.Diagnostics.Append(resp.Private.SetKey(ctx, "roles_configured", []byte("true"))...)
+	r.Read(ctx, resource.ReadRequest{State: resp.State, Private: resp.Private}, &resp)
+
 	if errs := resp.Diagnostics.Errors(); len(errs) != 1 || !strings.Contains(errs[0].Detail(), "role.view") {
 		t.Errorf("diagnostics = %v, want one error that names role.view", resp.Diagnostics)
+	}
+}
+
+func TestGroupCreateRecordsWhetherRolesAreConfigured(t *testing.T) {
+	for name, tc := range map[string]struct {
+		config map[string]any
+		want   string
+	}{
+		"roles set":     {map[string]any{"name": "Translators", "roles": stringSet()}, "true"},
+		"roles omitted": {map[string]any{"name": "Translators"}, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			resp, _ := createGroup(t, groupWithoutGrants, tc.config)
+			if resp.Diagnostics.HasError() {
+				t.Fatalf("Create: %v", resp.Diagnostics)
+			}
+			if got, _ := resp.Private.GetKey(context.Background(), "roles_configured"); string(got) != tc.want {
+				t.Errorf("roles_configured = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -194,6 +238,7 @@ func TestGroupCreateAddsTheConfiguredGrants(t *testing.T) {
 		"languages": stringSet("de", "sr@latin"), "projects": stringSet("docs"),
 		"components": stringSet("docs/guides/api")}
 	resp := resource.CreateResponse{State: tfsdk.State{Schema: s.Schema, Raw: projectValue(s, nil)}}
+	newPrivate(&resp.Private)
 	r.Create(context.Background(), resource.CreateRequest{
 		Config: tfsdk.Config{Schema: s.Schema, Raw: projectValue(s, config)},
 		Plan:   tfsdk.Plan{Schema: s.Schema, Raw: projectValue(s, config)},
@@ -229,6 +274,7 @@ func TestGroupCreateFailsOnAnUnknownRoleAndKeepsTheGroup(t *testing.T) {
 	r, s := groupResourceWith(c)
 	config := map[string]any{"name": "Translators", "roles": stringSet("Reviewer")}
 	resp := resource.CreateResponse{State: tfsdk.State{Schema: s.Schema, Raw: projectValue(s, nil)}}
+	newPrivate(&resp.Private)
 	r.Create(context.Background(), resource.CreateRequest{
 		Config: tfsdk.Config{Schema: s.Schema, Raw: projectValue(s, config)},
 		Plan:   tfsdk.Plan{Schema: s.Schema, Raw: projectValue(s, config)},
@@ -258,6 +304,7 @@ func TestGroupUpdateRemovesGrantsAddedOutsideTheConfiguration(t *testing.T) {
 	config := map[string]any{"name": "Translators", "roles": stringSet("Review strings")}
 	plan := map[string]any{"id": "12", "name": "Translators", "roles": stringSet("Review strings")}
 	resp := resource.UpdateResponse{State: tfsdk.State{Schema: s.Schema, Raw: projectValue(s, prior)}}
+	newPrivate(&resp.Private)
 	r.Update(context.Background(), resource.UpdateRequest{
 		Config: tfsdk.Config{Schema: s.Schema, Raw: projectValue(s, config)},
 		Plan:   tfsdk.Plan{Schema: s.Schema, Raw: projectValue(s, plan)},
@@ -281,6 +328,7 @@ func TestGroupUpdatePatchesTheSelectionBeforeTheGrants(t *testing.T) {
 	config := map[string]any{"name": "Translators", "project_selection": "manual", "projects": stringSet("docs")}
 	plan := withAttributes(config, map[string]any{"id": "12"})
 	resp := resource.UpdateResponse{State: tfsdk.State{Schema: s.Schema, Raw: projectValue(s, prior)}}
+	newPrivate(&resp.Private)
 	r.Update(context.Background(), resource.UpdateRequest{
 		Config: tfsdk.Config{Schema: s.Schema, Raw: projectValue(s, config)},
 		Plan:   tfsdk.Plan{Schema: s.Schema, Raw: projectValue(s, plan)},
@@ -303,6 +351,7 @@ func TestGroupUpdateLeavesOmittedGrantsAlone(t *testing.T) {
 	config := map[string]any{"name": "Translators"}
 	plan := withAttributes(prior, map[string]any{"name": "Translators"})
 	resp := resource.UpdateResponse{State: tfsdk.State{Schema: s.Schema, Raw: projectValue(s, prior)}}
+	newPrivate(&resp.Private)
 	r.Update(context.Background(), resource.UpdateRequest{
 		Config: tfsdk.Config{Schema: s.Schema, Raw: projectValue(s, config)},
 		Plan:   tfsdk.Plan{Schema: s.Schema, Raw: projectValue(s, plan)},
@@ -333,6 +382,7 @@ func TestGroupUpdateStoresTheGroupAfterAFailedGrant(t *testing.T) {
 	config := map[string]any{"name": "Translators", "roles": stringSet("Review strings"), "projects": stringSet("docs")}
 	plan := withAttributes(config, map[string]any{"id": "12"})
 	resp := resource.UpdateResponse{State: tfsdk.State{Schema: s.Schema, Raw: projectValue(s, prior)}}
+	newPrivate(&resp.Private)
 	r.Update(context.Background(), resource.UpdateRequest{
 		Config: tfsdk.Config{Schema: s.Schema, Raw: projectValue(s, config)},
 		Plan:   tfsdk.Plan{Schema: s.Schema, Raw: projectValue(s, plan)},

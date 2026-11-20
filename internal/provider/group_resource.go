@@ -170,7 +170,8 @@ func (r *groupResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 			},
 			"roles": grants("Names of the Roles that the Group grants, such as `Review strings`. The provider " +
 				"looks up their IDs with the API token, which needs the `role.view` permission to see Roles " +
-				"outside its own Groups."),
+				"outside its own Groups. When the last apply set `roles`, a Role that the token cannot see fails " +
+				"the refresh; otherwise, such as after an import, the provider leaves it out with a warning."),
 			"languages": grants("Codes of the Languages that the Group grants, such as `de`. Needs " +
 				"`language_selection = \"manual\"`."),
 			"projects": grants("Slugs of the Projects that the Group grants. Needs `project_selection = " +
@@ -217,7 +218,7 @@ func (r *groupResource) Create(ctx context.Context, req resource.CreateRequest, 
 		resp.Diagnostics.Append(apiErrorDiagnostic("Creating the Group failed", err))
 		return
 	}
-	r.writeGrantsAndStore(ctx, req.Config, g, planned, &resp.State, &resp.Diagnostics)
+	r.writeGrantsAndStore(ctx, req.Config, g, planned, &resp.State, resp.Private, &resp.Diagnostics)
 }
 
 func (r *groupResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -235,7 +236,9 @@ func (r *groupResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		resp.Diagnostics.Append(apiErrorDiagnostic("Reading the Group failed", err))
 		return
 	}
-	m, diags := newGroupResourceModel(ctx, g, &grantResolver{client: r.client})
+	rolesConfigured, diags := req.Private.GetKey(ctx, rolesConfiguredKey)
+	resp.Diagnostics.Append(diags...)
+	m, diags := newGroupResourceModel(ctx, g, &grantResolver{client: r.client, skipHiddenRoles: len(rolesConfigured) == 0})
 	resp.Diagnostics.Append(diags...)
 	if !resp.Diagnostics.HasError() {
 		resp.Diagnostics.Append(resp.State.Set(ctx, m)...)
@@ -287,7 +290,7 @@ func (r *groupResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		resp.Diagnostics.Append(apiErrorDiagnostic("Updating the Group failed", err))
 		return
 	}
-	r.writeGrantsAndStore(ctx, req.Config, g, planned, &resp.State, &resp.Diagnostics)
+	r.writeGrantsAndStore(ctx, req.Config, g, planned, &resp.State, resp.Private, &resp.Diagnostics)
 }
 
 func projectChangeDiagnostics(g *client.Group, planned string) diag.Diagnostics {
@@ -313,8 +316,15 @@ func projectChangeDiagnostics(g *client.Group, planned string) diag.Diagnostics 
 // writeGrantsAndStore writes the planned Grants to g, the Group that Weblate returned for a create or update, and puts
 // the Group into state, also when a Grant or the read-back check fails, because the writes before happened.
 func (r *groupResource) writeGrantsAndStore(ctx context.Context, config tfsdk.Config, g *client.Group,
-	planned map[string][]string, state *tfsdk.State, diags *diag.Diagnostics) {
-	gr := &grantResolver{client: r.client}
+	planned map[string][]string, state *tfsdk.State, private privateState, diags *diag.Diagnostics) {
+	var roles types.Set
+	diags.Append(config.GetAttribute(ctx, path.Root("roles"), &roles)...)
+	rolesConfigured := []byte(nil)
+	if !roles.IsNull() {
+		rolesConfigured = []byte("true")
+	}
+	diags.Append(private.SetKey(ctx, rolesConfiguredKey, rolesConfigured)...)
+	gr := &grantResolver{client: r.client, skipHiddenRoles: roles.IsNull()}
 	g, written := gr.writeGrants(ctx, g, planned)
 	diags.Append(written...)
 	if g == nil {

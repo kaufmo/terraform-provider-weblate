@@ -32,7 +32,14 @@ var grantAttributes = []struct {
 type grantResolver struct {
 	client *client.Client
 	roles  []client.Role
+	// skipHiddenRoles leaves out a Role that the token cannot see, with a warning. Only safe when the configuration
+	// omits roles: a set roles attribute has to list every Role Grant, so there a hidden Role is an error.
+	skipHiddenRoles bool
 }
+
+// rolesConfiguredKey is the private state key that records whether the configuration of the last create or update
+// set roles, because Read has no configuration.
+const rolesConfiguredKey = "roles_configured"
 
 func (gr *grantResolver) listRoles(ctx context.Context) ([]client.Role, error) {
 	if gr.roles == nil {
@@ -55,6 +62,9 @@ func (gr *grantResolver) grantSets(ctx context.Context, g *client.Group) (map[st
 			name, d := gr.name(ctx, path.Root(a.name), a.grant, u)
 			if diags.Append(d...); diags.HasError() {
 				return nil, diags
+			}
+			if name == "" {
+				continue // a hidden Role that roleName skipped
 			}
 			names = append(names, name)
 		}
@@ -104,6 +114,12 @@ func (gr *grantResolver) roleName(ctx context.Context, p path.Path, apiURL strin
 		if strconv.FormatInt(r.ID, 10) == id {
 			return r.Name, diags
 		}
+	}
+	if gr.skipHiddenRoles {
+		diags.AddAttributeWarning(p, "Role not visible",
+			fmt.Sprintf("The Group grants the Role with ID %s, which the API token cannot see, so roles leaves it "+
+				"out. Give the token's user the role.view permission to read it.", id))
+		return "", diags
 	}
 	diags.AddAttributeError(p, "Role not visible",
 		fmt.Sprintf("The Group grants the Role with ID %s, which the API token cannot see, so the provider cannot "+

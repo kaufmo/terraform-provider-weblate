@@ -37,6 +37,7 @@ func createGroup(t *testing.T, stored string, config map[string]any) (resource.C
 	c, requests := fakeWeblate(t, func(request) (int, string) { return http.StatusCreated, stored })
 	r, s := groupResourceWith(c)
 	resp := resource.CreateResponse{State: tfsdk.State{Schema: s.Schema, Raw: projectValue(s, nil)}}
+	newPrivate(&resp.Private)
 	r.Create(context.Background(), resource.CreateRequest{
 		Config: tfsdk.Config{Schema: s.Schema, Raw: projectValue(s, config)},
 		Plan:   tfsdk.Plan{Schema: s.Schema, Raw: projectValue(s, config)},
@@ -99,7 +100,8 @@ func readGroupResource(t *testing.T, respond func(r request) (int, string), stat
 	c, _ := fakeWeblate(t, respond)
 	r, s := groupResourceWith(c)
 	resp := resource.ReadResponse{State: tfsdk.State{Schema: s.Schema, Raw: projectValue(s, state)}}
-	r.Read(context.Background(), resource.ReadRequest{State: resp.State}, &resp)
+	newPrivate(&resp.Private)
+	r.Read(context.Background(), resource.ReadRequest{State: resp.State, Private: resp.Private}, &resp)
 	return resp
 }
 
@@ -151,6 +153,7 @@ func updateGroup(t *testing.T, respond func(r request) (int, string), prior, con
 	c, requests := fakeWeblate(t, respond)
 	r, s := groupResourceWith(c)
 	resp := resource.UpdateResponse{State: tfsdk.State{Schema: s.Schema, Raw: projectValue(s, prior)}}
+	newPrivate(&resp.Private)
 	r.Update(context.Background(), resource.UpdateRequest{
 		Config: tfsdk.Config{Schema: s.Schema, Raw: projectValue(s, config)},
 		Plan:   tfsdk.Plan{Schema: s.Schema, Raw: projectValue(s, plan)},
