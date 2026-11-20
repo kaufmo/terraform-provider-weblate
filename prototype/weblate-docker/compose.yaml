@@ -49,8 +49,6 @@ services:
       REDIS_HOST: cache
     volumes:
       - ./settings-override.py:/app/data/settings-override.py:ro
-    tmpfs:
-      - /app/cache
     depends_on:
       - database
       - cache

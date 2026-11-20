@@ -51,12 +51,18 @@ def api(method, path, body=None):
             return e.code, raw[:300].decode(errors="replace")
 
 
+class ContainerExited(Exception):
+    pass
+
+
 def wait_for(pred, timeout=600, step=0.5):
     t0 = time.monotonic()
     while time.monotonic() - t0 < timeout:
         try:
             if pred():
                 return round(time.monotonic() - t0, 1)
+        except ContainerExited:
+            raise
         except Exception:
             pass
         time.sleep(step)
@@ -64,8 +70,13 @@ def wait_for(pred, timeout=600, step=0.5):
 
 
 def healthy():
-    with urllib.request.urlopen(BASE + "/healthz/", timeout=5) as r:
-        return r.status == 200
+    try:
+        with urllib.request.urlopen(BASE + "/healthz/", timeout=5) as r:
+            return r.status == 200
+    except OSError:
+        if not compose("ps", "-q", "--status", "running", "weblate").stdout.strip():
+            raise ContainerExited("weblate container exited")
+        return False
 
 
 def weblate_shell(code):
