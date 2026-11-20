@@ -1,6 +1,7 @@
 #!/bin/sh
-# Starts a fresh Weblate instance for the acceptance tests and prints WEBLATE_URL, WEBLATE_API_TOKEN of the user admin
-# and WEBLATE_REVIEWER_API_TOKEN of the user reviewer, who is only in Weblate's default Groups, as KEY=value lines, for
+# Starts a fresh Weblate instance for the acceptance tests and prints WEBLATE_URL, WEBLATE_API_TOKEN of the user admin,
+# WEBLATE_REVIEWER_API_TOKEN of the user reviewer, who is only in Weblate's default Groups, and WEBLATE_TEST_WORKSPACE,
+# the UUID of a Workspace, as KEY=value lines, for
 # `export $(test/weblate/start.sh)` or `test/weblate/start.sh >> "$GITHUB_ENV"`.
 #
 # WEBLATE_IMAGE overrides the image from the Dockerfile, WEBLATE_PORT the local port (default 8080).
@@ -12,6 +13,7 @@ export WEBLATE_IMAGE
 url=http://127.0.0.1:${WEBLATE_PORT:-8080}
 token=wlu_acceptancetesttoken0001
 reviewer_token=wlu_acceptancetestreviewer0001
+workspace=00000000-0000-4000-8000-000000000001
 
 docker compose down -v --remove-orphans >&2
 docker compose up -d >&2
@@ -43,7 +45,11 @@ Token.objects.create(user=user, key='$token')
 # Weblate's API cannot create the token of another user; the tests add this user to the Groups they need.
 reviewer = User.objects.create(username='reviewer', full_name='Reviewer', email='reviewer@example.com')
 Token.objects.create(user=reviewer, key='$reviewer_token')
+# Weblate's API cannot list or create Workspaces.
+from weblate.workspaces.models import Workspace
+Workspace.objects.create(id='$workspace', name='Acceptance tests')
 " >&2
 curl -fsS -o /dev/null -H "Authorization: Token $token" "$url/api/"
 
-printf 'WEBLATE_URL=%s\nWEBLATE_API_TOKEN=%s\nWEBLATE_REVIEWER_API_TOKEN=%s\n' "$url" "$token" "$reviewer_token"
+printf 'WEBLATE_URL=%s\nWEBLATE_API_TOKEN=%s\nWEBLATE_REVIEWER_API_TOKEN=%s\nWEBLATE_TEST_WORKSPACE=%s\n' "$url" "$token" \
+	"$reviewer_token" "$workspace"

@@ -23,7 +23,7 @@ docker compose -f test/weblate/compose.yaml down -v
   `weblate/weblate:2026.10.1.4`, to test another version, and `WEBLATE_PORT` to use another port.
 - To run the tests with OpenTofu, also set `TF_ACC_TERRAFORM_PATH=$(command -v tofu)`,
   `TF_ACC_PROVIDER_NAMESPACE=hashicorp` and `TF_ACC_PROVIDER_HOST=registry.opentofu.org`.
-- `TestAccProjectResourceWorkspace` runs only with `WEBLATE_TEST_WORKSPACE` set to the UUID of a Workspace of the
-  instance.
+- The Workspace tests run only with `WEBLATE_TEST_WORKSPACE` set to the UUID of a Workspace of the instance, because
+  Weblate's API cannot list or create Workspaces. `start.sh` creates one and prints its UUID.
 - Test objects have slugs that start with `tf-acc-`. To delete the objects that a canceled run left behind, run
   `go test ./internal/provider -v -sweep=all` with the same environment.
