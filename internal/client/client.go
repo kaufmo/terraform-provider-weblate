@@ -10,17 +10,26 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
 
-const requestTimeout = 60 * time.Second
+const (
+	requestTimeout = 60 * time.Second
+	maxAttempts    = 5
+	firstBackoff   = time.Second
+	maxBackoff     = 30 * time.Second
+	// A longer Retry-After means the hourly budget is used up; failing beats a CI job that sleeps for up to an hour.
+	maxRetryAfter = time.Minute
+)
 
 // Client calls the REST API of one Weblate instance.
 type Client struct {
 	apiURL *url.URL
 	token  string
 	http   *http.Client
+	sleep  func(context.Context, time.Duration) error
 }
 
 // New returns a client for the Weblate instance at baseURL, such as https://weblate.example.com or
@@ -45,12 +54,16 @@ func New(baseURL, token string) (*Client, error) {
 		apiURL: u,
 		token:  token,
 		// The zero Transport is http.DefaultTransport, which takes the proxy from HTTPS_PROXY and NO_PROXY.
-		http: &http.Client{Timeout: requestTimeout},
+		http:  &http.Client{Timeout: requestTimeout},
+		sleep: sleep,
 	}, nil
 }
 
 // Do sends a request to ref and decodes the JSON response into out, unless out is nil. ref is either a path relative
 // to the API root, such as "projects/docs/", or an absolute URL taken from a Weblate response.
+//
+// Do retries a 429 response for every method, and 502, 503, 504 and connection errors for every method except POST,
+// because a repeated POST could create an object twice.
 func (c *Client) Do(ctx context.Context, method, ref string, body, out any) error {
 	target, err := c.resolve(ref)
 	if err != nil {
@@ -63,30 +76,63 @@ func (c *Client) Do(ctx context.Context, method, ref string, body, out any) erro
 		}
 	}
 
+	for attempt := 1; ; attempt++ {
+		resp, data, err := c.send(ctx, method, target, payload)
+		var wait time.Duration
+		retry := false
+		if err != nil {
+			retry = method != http.MethodPost && ctx.Err() == nil
+		} else {
+			err = decode(method, target, resp, data, out)
+			switch resp.StatusCode {
+			case http.StatusTooManyRequests:
+				wait = retryAfter(resp.Header)
+				retry = wait <= maxRetryAfter
+			case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+				retry = method != http.MethodPost
+			}
+		}
+		if !retry || attempt == maxAttempts {
+			return err
+		}
+		if wait == 0 {
+			wait = min(firstBackoff<<(attempt-1), maxBackoff)
+		}
+		if err := c.sleep(ctx, wait); err != nil {
+			return err
+		}
+	}
+}
+
+func (c *Client) send(ctx context.Context, method, target string, payload []byte) (*http.Response, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(payload))
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	req.Header.Set("Authorization", "Token "+c.token)
 	req.Header.Set("Accept", "application/json")
-	if body != nil {
+	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
+	return resp, data, err
+}
+
+func decode(method, target string, resp *http.Response, data []byte, out any) error {
 	jsonBody := isJSON(resp.Header.Get("Content-Type"))
 	success := resp.StatusCode >= 200 && resp.StatusCode < 300
 	if !success || (out != nil && !jsonBody) {
 		apiErr := &APIError{Method: method, URL: target, StatusCode: resp.StatusCode, NotJSON: !jsonBody}
 		if jsonBody {
 			apiErr.Body = string(data)
+		}
+		if resp.StatusCode == http.StatusTooManyRequests {
+			apiErr.RetryAfter = retryAfter(resp.Header)
 		}
 		return apiErr
 	}
@@ -96,6 +142,26 @@ func (c *Client) Do(ctx context.Context, method, ref string, body, out any) erro
 		}
 	}
 	return nil
+}
+
+// retryAfter reads Retry-After in seconds, the form Weblate sends. It returns 0 when the header is missing.
+func retryAfter(h http.Header) time.Duration {
+	seconds, err := strconv.Atoi(h.Get("Retry-After"))
+	if err != nil || seconds < 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func sleep(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (c *Client) resolve(ref string) (string, error) {
