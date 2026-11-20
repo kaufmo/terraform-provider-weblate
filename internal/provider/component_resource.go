@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"net/url"
 	"strings"
 	"time"
 
@@ -29,7 +31,8 @@ import (
 var (
 	_ resource.ResourceWithConfigure   = &componentResource{}
 	_ resource.ResourceWithImportState = &componentResource{}
-	_ resource.ResourceWithModifyPlan  = &componentResource{}
+	_ resource.ResourceWithModifyPlan     = &componentResource{}
+	_ resource.ResourceWithValidateConfig = &componentResource{}
 )
 
 type fieldKind int
@@ -51,12 +54,16 @@ type componentField struct {
 	computed    bool
 	// path marks a file path that Weblate cleans with cleanup_path() before it stores it.
 	path bool
+	// credentials marks a repository URL that gets the attributes <name>_username, <name>_password_wo and
+	// <name>_password_wo_version, because Weblate keeps the credentials only inside the URL.
+	credentials bool
 }
 
 var componentFields = map[string]componentField{
 	"name":     {kind: stringField, required: true, description: "Display name of the Component. Unique in the Project."},
 	"slug":     {kind: stringField, required: true, description: "Slug of the Component, as in its URL. Unique in the Project."},
-	"repo":     {kind: stringField, required: true, description: "URL of the repository that Weblate clones."},
+	"repo": {kind: stringField, required: true, credentials: true, description: "URL of the repository that " +
+		"Weblate clones, without credentials."},
 	"filemask": {kind: stringField, required: true, path: true, description: "Path of the translation files relative to the repository root, with `*` instead of the language code, such as `po/*.po`."},
 	"file_format": {kind: stringField, required: true, description: "File format of the translation files, such as " +
 		"`po` or `json`."},
@@ -65,8 +72,8 @@ var componentFields = map[string]componentField{
 		"with `jsonencode`."},
 	"branch": {kind: stringField, description: "Branch to translate. Defaults to the branch that `HEAD` of the " +
 		"repository points to."},
-	"push": {kind: stringField, description: "URL of the repository that Weblate pushes to. Weblate does not push " +
-		"when it is empty."},
+	"push": {kind: stringField, credentials: true, description: "URL of the repository that Weblate pushes to, " +
+		"without credentials. Weblate does not push when it is empty."},
 	"push_branch": {kind: stringField, description: "Branch that Weblate pushes to. Empty means `branch`."},
 	"git_export": {kind: stringField, computed: true, description: "URL from which users can fetch the changes " +
 		"in Weblate's copy of the repository."},
@@ -186,7 +193,114 @@ func (f componentField) value(raw json.RawMessage) (attr.Value, error) {
 	}
 	var s *string
 	err := json.Unmarshal(raw, &s)
+	if s != nil && f.credentials {
+		*s = withoutUserinfo(*s)
+	}
 	return trimmedStringPointerValue(s), err
+}
+
+// credentialAttributes returns the attributes that hold the credentials of the repository URL attribute name.
+func credentialAttributes(name string) map[string]schema.Attribute {
+	return map[string]schema.Attribute{
+		name + "_username": schema.StringAttribute{
+			MarkdownDescription: fmt.Sprintf("User name that the provider adds to `%[1]s`. A token login takes the "+
+				"user name that the host expects, such as `x-access-token` for GitHub, `oauth2` for GitLab or "+
+				"`x-token-auth` for Bitbucket. An SSH URL, such as `ssh://git@example.com/app.git`, needs `git` here "+
+				"and no `%[1]s_password_wo`.", name),
+			Optional: true,
+		},
+		name + "_password_wo": schema.StringAttribute{
+			MarkdownDescription: fmt.Sprintf("Password or token that the provider adds to `%[1]s`. Needs "+
+				"`%[1]s_username`. It is write-only: it never reaches plan or state, so the provider sends a new value "+
+				"only when `%[1]s_password_wo_version` changes. Needs OpenTofu or Terraform 1.11 or later.", name),
+			Optional:  true,
+			WriteOnly: true,
+		},
+		name + "_password_wo_version": schema.Int64Attribute{
+			MarkdownDescription: fmt.Sprintf("Version of `%[1]s_password_wo`. Change it, such as by adding 1, to send "+
+				"`%[1]s` with the current `%[1]s_password_wo`.", name),
+			Optional: true,
+		},
+	}
+}
+
+// withCredentials returns rawURL with the user name and password added, built with url.UserPassword so that special
+// characters need no escaping in the configuration. Without a user name, it returns rawURL unchanged.
+func withCredentials(rawURL string, username, password types.String) (string, error) {
+	if username.IsNull() {
+		return rawURL, nil
+	}
+	rawURL = strings.TrimSpace(rawURL)
+	if u, err := url.Parse(rawURL); err != nil || u.Host == "" {
+		return "", fmt.Errorf("the provider adds a user name only to a URL with a scheme and a host, such as "+
+			"https://example.com/app.git or ssh://example.com/app.git, not to %q", rawURL)
+	}
+	user := url.User(username.ValueString())
+	if !password.IsNull() {
+		user = url.UserPassword(username.ValueString(), password.ValueString())
+	}
+	scheme, rest, _ := strings.Cut(rawURL, "//")
+	return scheme + "//" + user.String() + "@" + rest, nil
+}
+
+func hasUserinfo(rawURL string) bool {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	return err == nil && u.User != nil
+}
+
+// withoutUserinfo removes the user name and password from rawURL the way Weblate's cleanup_repo_url() does, for
+// instances that set HIDE_REPO_CREDENTIALS = False and return the URL as stored.
+func withoutUserinfo(rawURL string) string {
+	if !hasUserinfo(rawURL) {
+		return rawURL
+	}
+	_, rest, _ := strings.Cut(rawURL, "//")
+	authority := rest[:strings.IndexAny(rest+"/", "/?#")]
+	userinfo := authority[:strings.LastIndex(authority, "@")+1]
+	return strings.Replace(rawURL, "//"+userinfo, "//", 1)
+}
+
+// sendCredentials replaces the repository URLs in fields, the body of a create or update, with the URLs that carry
+// the credentials from config, and drops the credential attributes from it. With a prior state, it sends a URL only
+// when the URL, its user name or its password version changed, because Weblate deletes the stored credentials when
+// it receives the URL without them.
+func sendCredentials(ctx context.Context, config tfsdk.Config, plan tfsdk.Plan, prior *tfsdk.State, fields map[string]any) diag.Diagnostics {
+	var diags diag.Diagnostics
+	for name, f := range componentFields {
+		if !f.credentials {
+			continue
+		}
+		for attribute := range credentialAttributes(name) {
+			delete(fields, attribute)
+		}
+		var rawURL trimmedString
+		var username, password types.String
+		diags.Append(config.GetAttribute(ctx, path.Root(name), &rawURL)...)
+		diags.Append(config.GetAttribute(ctx, path.Root(name+"_username"), &username)...)
+		diags.Append(config.GetAttribute(ctx, path.Root(name+"_password_wo"), &password)...)
+		if diags.HasError() || rawURL.IsNull() {
+			continue
+		}
+		if _, urlChanged := fields[name]; prior != nil && !urlChanged {
+			changed := false
+			for _, attribute := range []string{name + "_username", name + "_password_wo_version"} {
+				var planned, old attr.Value
+				diags.Append(plan.GetAttribute(ctx, path.Root(attribute), &planned)...)
+				diags.Append(prior.GetAttribute(ctx, path.Root(attribute), &old)...)
+				changed = changed || !planned.Equal(old)
+			}
+			if !changed {
+				continue
+			}
+		}
+		withUser, err := withCredentials(rawURL.ValueString(), username, password)
+		if err != nil {
+			diags.AddAttributeError(path.Root(name+"_username"), "URL without host", err.Error())
+			continue
+		}
+		fields[name] = withUser
+	}
+	return diags
 }
 
 // cleanPathValidator rejects a path that Weblate's cleanup_path() would change, because Weblate stores the cleaned
@@ -274,6 +388,9 @@ func (r *componentResource) Schema(ctx context.Context, _ resource.SchemaRequest
 	}
 	for name, f := range componentFields {
 		attributes[name] = f.attribute()
+		if f.credentials {
+			maps.Copy(attributes, credentialAttributes(name))
+		}
 	}
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Manages a Weblate Component with its own repository.\n\n" +
@@ -291,6 +408,16 @@ func (r *componentResource) Schema(ctx context.Context, _ resource.SchemaRequest
 			"replaces the Component on the next apply. Delete waits until Weblate has removed the Component.\n\n" +
 			"Create always sends `disable_autoshare`, so Weblate never turns a Component into a link to another " +
 			"Component with the same repository.\n\n" +
+			"Weblate keeps repository credentials only inside the `repo` and `push` URLs and does not return " +
+			"them. The provider adds `repo_username` and `repo_password_wo` to `repo`, and `push_username` and " +
+			"`push_password_wo` to `push`; neither falls back to the other, and a URL with a user name or " +
+			"password fails at plan. A changed password shows in the plan only when its `*_password_wo_version` " +
+			"changes, and the provider cannot detect credentials that were changed outside OpenTofu. Weblate " +
+			"deletes the stored credentials whenever it receives `repo` or `push` without them, so the provider " +
+			"sends `repo` only when `repo`, `repo_username` or `repo_password_wo_version` changes, and then always " +
+			"with the credentials from the configuration; the same applies to `push`. After an import, or when " +
+			"the credentials were set in the Weblate UI, the first change of `repo` without `repo_password_wo` " +
+			"deletes the stored credentials.\n\n" +
 			"Weblate adds objects of its own on create, which the provider ignores unless the configuration " +
 			"declares them: it installs Add-ons that depend on the file format and the `DEFAULT_ADDONS` setting, " +
 			"and for the first Component of a Project it creates a glossary Component with the slug `glossary`, " +
@@ -321,6 +448,45 @@ func (r *componentResource) Configure(_ context.Context, req resource.ConfigureR
 	}
 }
 
+// ValidateConfig rejects credentials that the provider cannot add to the repository URLs.
+func (r *componentResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	for name, f := range componentFields {
+		if !f.credentials {
+			continue
+		}
+		var rawURL trimmedString
+		var username, password types.String
+		resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root(name), &rawURL)...)
+		resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root(name+"_username"), &username)...)
+		resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root(name+"_password_wo"), &password)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		urlKnown := !rawURL.IsNull() && !rawURL.IsUnknown()
+		if urlKnown && hasUserinfo(rawURL.ValueString()) {
+			resp.Diagnostics.AddAttributeError(path.Root(name), "Credentials in the repository URL",
+				fmt.Sprintf("Set the user name in %[1]s_username and the password or token in %[1]s_password_wo, "+
+					"not in %[1]s. Weblate does not return the credentials in the URL, and %[1]s_password_wo keeps "+
+					"them out of plan and state.", name))
+			continue
+		}
+		if !password.IsNull() && username.IsNull() {
+			resp.Diagnostics.AddAttributeError(path.Root(name+"_password_wo"), "Password without user name",
+				fmt.Sprintf("%[1]s_password_wo needs %[1]s_username.", name))
+		}
+		if username.IsNull() || username.IsUnknown() {
+			continue
+		}
+		if rawURL.IsNull() {
+			resp.Diagnostics.AddAttributeError(path.Root(name+"_username"), "User name without URL",
+				fmt.Sprintf("%[1]s_username needs %[1]s.", name))
+		} else if _, err := withCredentials(rawURL.ValueString(), username, password); urlKnown && err != nil {
+			resp.Diagnostics.AddAttributeError(path.Root(name+"_username"), "URL without host",
+				fmt.Sprintf("%s_username needs %s with a host: %s.", name, name, err))
+		}
+	}
+}
+
 // ModifyPlan plans id as the new slug path and rejects a change of source_language, which Weblate refuses.
 func (r *componentResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if req.Plan.Raw.IsNull() {
@@ -345,6 +511,7 @@ func (r *componentResource) ModifyPlan(ctx context.Context, req resource.ModifyP
 func (r *componentResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	fields, diags := fieldsToWrite(ctx, req.Config, req.Plan, nil)
 	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(sendCredentials(ctx, req.Config, req.Plan, nil, fields)...)
 	var project, category types.String
 	var t timeouts.Value
 	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("project"), &project)...)
@@ -368,12 +535,12 @@ func (r *componentResource) Create(ctx context.Context, req resource.CreateReque
 	}
 	timeout, diags := t.Create(ctx, defaultTimeout)
 	resp.Diagnostics.Append(diags...)
-	r.finishWrite(ctx, req.Config, comp, t, timeout, &resp.State, &resp.Diagnostics)
+	r.finishWrite(ctx, req.Config, req.Plan, comp, t, timeout, &resp.State, &resp.Diagnostics)
 }
 
 // finishWrite waits for the background task of a create or update and puts the Component into state, also when the
 // task failed or the wait timed out, because the write happened.
-func (r *componentResource) finishWrite(ctx context.Context, config tfsdk.Config, comp *client.Component,
+func (r *componentResource) finishWrite(ctx context.Context, config tfsdk.Config, plan tfsdk.Plan, comp *client.Component,
 	t timeouts.Value, timeout time.Duration, state *tfsdk.State, diags *diag.Diagnostics) {
 	var taskErr error
 	if comp.TaskURL != "" {
@@ -389,6 +556,17 @@ func (r *componentResource) finishWrite(ctx context.Context, config tfsdk.Config
 		}
 	}
 	r.store(ctx, comp, t, state, diags)
+	// Weblate does not return the credentials, and a create starts from a null state.
+	for name, f := range componentFields {
+		if !f.credentials || state.Raw.IsNull() {
+			continue
+		}
+		for attribute := range credentialAttributes(name) {
+			var v attr.Value
+			diags.Append(plan.GetAttribute(ctx, path.Root(attribute), &v)...)
+			diags.Append(state.SetAttribute(ctx, path.Root(attribute), v)...)
+		}
+	}
 	switch {
 	case taskErr != nil:
 		diags.Append(apiErrorDiagnostic("Processing the Component failed", taskErr))
@@ -467,6 +645,7 @@ func (r *componentResource) Read(ctx context.Context, req resource.ReadRequest, 
 func (r *componentResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	fields, diags := fieldsToWrite(ctx, req.Config, req.Plan, &req.State)
 	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(sendCredentials(ctx, req.Config, req.Plan, &req.State, fields)...)
 	var id, project, planProject, category, planCategory types.String
 	var weblateID types.Int64
 	var t timeouts.Value
@@ -532,7 +711,7 @@ func (r *componentResource) Update(ctx context.Context, req resource.UpdateReque
 	}
 	timeout, diags := t.Update(ctx, defaultTimeout)
 	resp.Diagnostics.Append(diags...)
-	r.finishWrite(ctx, req.Config, comp, t, timeout, &resp.State, &resp.Diagnostics)
+	r.finishWrite(ctx, req.Config, req.Plan, comp, t, timeout, &resp.State, &resp.Diagnostics)
 }
 
 func (r *componentResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {

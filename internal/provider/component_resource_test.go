@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -62,6 +63,17 @@ func componentResourceWith(c *client.Client) (resource.Resource, resource.Schema
 	return r, schemaResp
 }
 
+// withoutWriteOnly returns attributes with the write-only ones removed, as the framework plans them.
+func withoutWriteOnly(s resource.SchemaResponse, attributes map[string]any) map[string]any {
+	m := withAttributes(attributes, nil)
+	for name, a := range s.Schema.Attributes {
+		if a.IsWriteOnly() {
+			delete(m, name)
+		}
+	}
+	return m
+}
+
 var referenceConfig = map[string]any{"project": "docs", "category": "docs/guides/api", "name": "Reference",
 	"slug": "reference", "repo": "http://git.example/demo.git", "filemask": "po/*.po", "file_format": "po",
 	"source_language": "en", "file_format_params": `{"po_line_wrap":77}`}
@@ -75,7 +87,7 @@ func createComponent(t *testing.T, respond func(r request) (int, string), config
 		Raw: tftypes.NewValue(s.Schema.Type().TerraformType(context.Background()), nil)}}
 	r.Create(context.Background(), resource.CreateRequest{
 		Config: tfsdk.Config{Schema: s.Schema, Raw: projectValue(s, config)},
-		Plan:   tfsdk.Plan{Schema: s.Schema, Raw: projectValue(s, config)},
+		Plan:   tfsdk.Plan{Schema: s.Schema, Raw: projectValue(s, withoutWriteOnly(s, config))},
 	}, &resp)
 	return resp, *requests
 }
@@ -216,7 +228,7 @@ func updateComponent(t *testing.T, respond func(r request) (int, string), prior,
 	c, requests := fakeWeblate(t, respond)
 	r, s := componentResourceWith(c)
 	plan := withAttributes(prior, map[string]any{"id": tftypes.UnknownValue})
-	for k, v := range config {
+	for k, v := range withoutWriteOnly(s, config) {
 		plan[k] = v
 	}
 	resp := resource.UpdateResponse{State: tfsdk.State{Schema: s.Schema, Raw: projectValue(s, plan)}}
@@ -415,4 +427,142 @@ func TestProviderRegistersComponentResource(t *testing.T) {
 		}
 	}
 	t.Error("the provider has no weblate_component resource")
+}
+
+var credentialsConfig = withAttributes(referenceConfig, map[string]any{
+	"repo_username": "x-access-token", "repo_password_wo": "p@ss:/", "repo_password_wo_version": int64(1),
+	"push": "http://git.example/push.git", "push_username": "bot", "push_password_wo": "secret"})
+
+func TestComponentCreateSendsRepoAndPushWithCredentials(t *testing.T) {
+	stored := strings.Replace(storedReference, `"push_branch": ""`,
+		`"push_branch": "", "push": "http://git.example/push.git"`, 1)
+	tree := referenceTree(stored)
+	resp, requests := createComponent(t, func(r request) (int, string) {
+		if r.method == http.MethodPost {
+			return http.StatusCreated, stored
+		}
+		return tree(r)
+	}, credentialsConfig)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Create: %v", resp.Diagnostics)
+	}
+
+	var body map[string]any
+	for _, r := range requests {
+		if r.method == http.MethodPost {
+			body = r.body
+		}
+	}
+	if body["repo"] != "http://x-access-token:p%40ss%3A%2F@git.example/demo.git" ||
+		body["push"] != "http://bot:secret@git.example/push.git" {
+		t.Errorf("repo = %v, push = %v, want the URLs with the credentials", body["repo"], body["push"])
+	}
+	for _, name := range []string{"repo_username", "repo_password_wo", "repo_password_wo_version",
+		"push_username", "push_password_wo", "push_password_wo_version"} {
+		if _, sent := body[name]; sent {
+			t.Errorf("body has %s", name)
+		}
+	}
+	if u := stateAttribute[types.String](t, resp.State, "repo_username"); u.ValueString() != "x-access-token" {
+		t.Errorf("repo_username = %v, want it kept in state", u)
+	}
+	if v := stateAttribute[types.Int64](t, resp.State, "repo_password_wo_version"); v.ValueInt64() != 1 {
+		t.Errorf("repo_password_wo_version = %v, want it kept in state", v)
+	}
+}
+
+func TestComponentUpdateSendsRepoOnlyWhenItOrItsCredentialsChange(t *testing.T) {
+	prior := withAttributes(referenceState, map[string]any{"repo_username": "x-access-token",
+		"repo_password_wo_version": int64(1), "push": "http://git.example/push.git", "push_username": "bot"})
+	for name, test := range map[string]struct {
+		change   map[string]any
+		wantRepo any
+	}{
+		"unrelated field": {map[string]any{"priority": int64(80)}, nil},
+		"version bump": {map[string]any{"repo_password_wo_version": int64(2)},
+			"http://x-access-token:p%40ss%3A%2F@git.example/demo.git"},
+		"user name": {map[string]any{"repo_username": "oauth2"}, "http://oauth2:p%40ss%3A%2F@git.example/demo.git"},
+		"url": {map[string]any{"repo": "http://git.example/other.git"},
+			"http://x-access-token:p%40ss%3A%2F@git.example/other.git"},
+		"credentials removed": {map[string]any{"repo_username": nil, "repo_password_wo": nil,
+			"repo_password_wo_version": nil}, "http://git.example/demo.git"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tree := referenceTree(storedReference)
+			_, requests := updateComponent(t, func(r request) (int, string) {
+				if r.method == http.MethodPatch {
+					return http.StatusOK, storedReference
+				}
+				return tree(r)
+			}, prior, withAttributes(credentialsConfig, test.change))
+			p := patches(requests)
+			if len(p) != 1 {
+				t.Fatalf("requests = %v, want one PATCH", requests)
+			}
+			if p[0].body["repo"] != test.wantRepo {
+				t.Errorf("repo = %v, want %v", p[0].body["repo"], test.wantRepo)
+			}
+			if _, sent := p[0].body["push"]; sent {
+				t.Errorf("body = %v, want no push", p[0].body)
+			}
+			for _, name := range []string{"repo_username", "repo_password_wo", "repo_password_wo_version"} {
+				if _, sent := p[0].body[name]; sent {
+					t.Errorf("body has %s", name)
+				}
+			}
+		})
+	}
+}
+
+func TestComponentReadRemovesCredentialsFromTheURLs(t *testing.T) {
+	// An instance with HIDE_REPO_CREDENTIALS = False returns the URLs as stored.
+	stored := strings.Replace(storedReference, `"repo": "http://git.example/demo.git"`,
+		`"repo": "http://x-access-token:p%40ss@git.example/demo.git", "push": "ssh://git@git.example/demo.git"`, 1)
+	resp := readComponentResource(t, referenceTree(stored), referenceState)
+	if repo := stateAttribute[trimmedString](t, resp.State, "repo"); repo.ValueString() != "http://git.example/demo.git" {
+		t.Errorf("repo = %v, want it without credentials", repo)
+	}
+	if push := stateAttribute[trimmedString](t, resp.State, "push"); push.ValueString() != "ssh://git.example/demo.git" {
+		t.Errorf("push = %v, want it without the user name", push)
+	}
+}
+
+func TestComponentConfigWithCredentialsInTheWrongPlaceFails(t *testing.T) {
+	r, s := componentResourceWith(nil)
+	for name, test := range map[string]struct {
+		config map[string]any
+		path   string
+		detail string
+	}{
+		"password without user name": {withAttributes(credentialsConfig, map[string]any{"repo_username": nil}),
+			"repo_password_wo", "repo_username"},
+		"user info in repo": {withAttributes(referenceConfig, map[string]any{
+			"repo": "https://user:token@git.example/demo.git"}), "repo", "repo_password_wo"},
+		"user name in push": {withAttributes(referenceConfig, map[string]any{
+			"push": "ssh://git@git.example/demo.git"}), "push", "push_password_wo"},
+		"user name without push": {withAttributes(credentialsConfig, map[string]any{"push": nil}),
+			"push_username", "push"},
+		"user name with a URL without host": {withAttributes(credentialsConfig, map[string]any{
+			"repo": "git@git.example:demo.git"}), "repo_username", "repo"},
+		"valid": {credentialsConfig, "", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var resp resource.ValidateConfigResponse
+			r.(resource.ResourceWithValidateConfig).ValidateConfig(context.Background(), resource.ValidateConfigRequest{
+				Config: tfsdk.Config{Schema: s.Schema, Raw: projectValue(s, test.config)}}, &resp)
+			errs := resp.Diagnostics.Errors()
+			if test.path == "" {
+				if len(errs) != 0 {
+					t.Errorf("diagnostics = %v, want none", errs)
+				}
+				return
+			}
+			if len(errs) != 1 || !strings.Contains(errs[0].Detail(), test.detail) {
+				t.Fatalf("diagnostics = %v, want one error that names %s", errs, test.detail)
+			}
+			if d, ok := errs[0].(diag.DiagnosticWithPath); !ok || !d.Path().Equal(path.Root(test.path)) {
+				t.Errorf("error is not at %s: %v", test.path, errs[0])
+			}
+		})
+	}
 }

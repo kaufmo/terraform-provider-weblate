@@ -20,10 +20,15 @@ import (
 // from Weblate's response to a create or update. Weblate can store a value other than the one it received without
 // an error, and without this check the user would get the framework's "Provider produced inconsistent result" or a
 // diff on every plan instead of the attribute and both values. Attributes that the configuration omits are skipped,
-// and string types with semantic equality, such as trimmedString, are compared by it.
+// and string types with semantic equality, such as trimmedString, are compared by it. Write-only attributes never
+// reach state and are skipped.
 func readBackDiagnostics(ctx context.Context, config tfsdk.Config, stored tfsdk.State) diag.Diagnostics {
 	var diags diag.Diagnostics
-	for _, name := range slices.Sorted(maps.Keys(config.Schema.GetAttributes())) {
+	attributes := config.Schema.GetAttributes()
+	for _, name := range slices.Sorted(maps.Keys(attributes)) {
+		if attributes[name].IsWriteOnly() {
+			continue
+		}
 		p := path.Root(name)
 		var sent, got attr.Value
 		d := config.GetAttribute(ctx, p, &sent)
