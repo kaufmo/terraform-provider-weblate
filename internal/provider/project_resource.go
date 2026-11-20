@@ -131,7 +131,7 @@ func (r *projectResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			},
 			"weblate_id": schema.Int64Attribute{
 				MarkdownDescription: "Numeric ID that Weblate gave the Project. It stays the same when the Project " +
-					"is renamed, so the provider finds a Project that was renamed outside OpenTofu by it.",
+					"is renamed, which lets the provider find a Project that was renamed outside OpenTofu.",
 				Computed:      true,
 				PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
 			},
