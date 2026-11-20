@@ -108,8 +108,33 @@ func TestFindComponentByIDSearchesTheProject(t *testing.T) {
 	if comp, err := c.FindComponentByID(ctx, "docs", 99); err != nil || comp != nil {
 		t.Errorf("FindComponentByID(docs, 99) = %v, %v, want nil", comp, err)
 	}
-	if comp, err := c.FindComponentByID(ctx, "gone", 12); err != nil || comp != nil {
-		t.Errorf("FindComponentByID in a missing Project = %v, %v, want nil", comp, err)
+}
+
+func TestFindComponentByIDSearchesAllComponentsWhenTheProjectIsGone(t *testing.T) {
+	var lists []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/api/components/" {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"detail": "Not found."}`))
+			return
+		}
+		lists = append(lists, r.URL.RawQuery)
+		_, _ = w.Write([]byte(`{"next": null, "results": [{"id": 3, "slug": "glossary"}, ` + storedComponent + `]}`))
+	}))
+	t.Cleanup(srv.Close)
+	c := newTestClient(t, srv.URL)
+	ctx := context.Background()
+
+	// A Project renamed outside OpenTofu has no Components under its old slug.
+	if comp, err := c.FindComponentByID(ctx, "old", 12); err != nil || comp == nil || comp.Slug != "reference" {
+		t.Errorf("FindComponentByID(old, 12) = %v, %v", comp, err)
+	}
+	if comp, err := c.FindComponentByID(ctx, "gone", 99); err != nil || comp != nil {
+		t.Errorf("FindComponentByID(gone, 99) = %v, %v, want nil", comp, err)
+	}
+	if len(lists) != 2 || lists[0] != "page_size=1000" {
+		t.Errorf("queries of the Component list = %q, want page_size=1000 each", lists)
 	}
 }
 

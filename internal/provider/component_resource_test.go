@@ -211,6 +211,26 @@ func TestComponentReadFindsARenamedComponentByWeblateID(t *testing.T) {
 	}
 }
 
+func TestComponentReadFindsAComponentAfterAProjectRename(t *testing.T) {
+	tree := referenceTree(storedReference)
+	resp := readComponentResource(t, func(r request) (int, string) {
+		switch r.path {
+		case "/api/components/":
+			return http.StatusOK, `{"next": null, "results": [` + storedReference + `]}`
+		case "/api/components/old/guides%2Fapi%2Freference/", "/api/projects/old/components/":
+			return http.StatusNotFound, notFound
+		}
+		return tree(r)
+	}, map[string]any{"id": "old/guides/api/reference", "weblate_id": int64(12), "project": "old"})
+
+	if id := stateAttribute[types.String](t, resp.State, "id"); id.ValueString() != "docs/guides/api/reference" {
+		t.Errorf("id = %v, want docs/guides/api/reference", id)
+	}
+	if p := stateAttribute[types.String](t, resp.State, "project"); p.ValueString() != "docs" {
+		t.Errorf("project = %v, want docs", p)
+	}
+}
+
 func TestComponentReadRemovesADeletedComponent(t *testing.T) {
 	resp := readComponentResource(t, func(r request) (int, string) {
 		if r.path == "/api/projects/docs/components/" {

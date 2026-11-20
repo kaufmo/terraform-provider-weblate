@@ -169,7 +169,7 @@ resource "weblate_component" "app_help" {
 - `git_export` (String) URL from which users can fetch the changes in Weblate's copy of the repository.
 - `id` (String) The slug path of the Component: the Project slug, the slugs of its Categories and its own slug, joined by `/`, such as `docs/guides/api`.
 - `linked_component` (String) `id` of the Component whose repository this Linked Component uses, or null. A Component is linked only when `repo` is `weblate://` followed by that `id`.
-- `weblate_id` (Number) Numeric ID that Weblate gave the Component. It stays the same when the Component is renamed or moved, which lets the provider find a Component that was renamed outside OpenTofu.
+- `weblate_id` (Number) Numeric ID that Weblate gave the Component. It stays the same when the Component is renamed or moved, which lets the provider find a Component that was renamed outside OpenTofu or whose Project was renamed outside OpenTofu.
 
 <a id="nestedblock--timeouts"></a>
 ### Nested Schema for `timeouts`

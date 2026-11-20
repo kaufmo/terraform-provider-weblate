@@ -389,7 +389,7 @@ func (r *componentResource) Schema(ctx context.Context, _ resource.SchemaRequest
 		"weblate_id": schema.Int64Attribute{
 			MarkdownDescription: "Numeric ID that Weblate gave the Component. It stays the same when the " +
 				"Component is renamed or moved, which lets the provider find a Component that was renamed outside " +
-				"OpenTofu.",
+				"OpenTofu or whose Project was renamed outside OpenTofu.",
 			Computed:      true,
 			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
 		},

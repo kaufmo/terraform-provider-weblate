@@ -51,11 +51,13 @@ func (c *Client) GetComponent(ctx context.Context, ref string) (*Component, erro
 }
 
 // FindComponentByID searches the Components of the Project for the numeric ID, because Weblate has no endpoint that
-// reads a Component by ID. It returns nil when the Project has no such Component or does not exist.
+// reads a Component by ID. When the Project does not exist, such as after a rename, it searches all Components of
+// the instance. It returns nil when no Component has the ID.
 func (c *Client) FindComponentByID(ctx context.Context, project string, id int64) (*Component, error) {
 	components, err := List[Component](ctx, c, ProjectRef(project)+"components/")
 	if IsNotFound(err) {
-		return nil, nil
+		// 1000 is the largest page Weblate serves; it keeps this rare search to few requests.
+		components, err = List[Component](ctx, c, "components/?page_size=1000")
 	}
 	if err != nil {
 		return nil, err
