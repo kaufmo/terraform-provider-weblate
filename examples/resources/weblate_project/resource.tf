@@ -9,4 +9,5 @@ resource "weblate_project" "docs" {
 
   translation_review = true
   commit_policy      = 30
+  license            = "MIT"
 }

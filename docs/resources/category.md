@@ -6,6 +6,8 @@ description: |-
   Manages a Weblate Category, a folder inside a Project that groups Components. Categories can nest up to three levels deep.
   
   Changing name or slug renames the Category in place, and changing category moves it in place. Weblate cannot move a Category to another Project, so changing project to another Project fails on apply. When project changes because the Project was renamed, only the state changes. Delete waits until Weblate has removed the Category in the background.
+  
+  Each Inherited setting is a pair of attributes, such as license and inherit_license. With license set, the provider sends inherit_license = false with it. With inherit_license = true, the setting comes from the next level up: Category, Project, then Workspace. Setting both fails at plan, and with both omitted the setting is not managed. While a setting is inherited, state holds the value that Weblate stores for this object, which has no effect.
 ---
 
 # weblate_category (Resource)
@@ -13,6 +15,8 @@ description: |-
 Manages a Weblate Category, a folder inside a Project that groups Components. Categories can nest up to three levels deep.
 
 Changing `name` or `slug` renames the Category in place, and changing `category` moves it in place. Weblate cannot move a Category to another Project, so changing `project` to another Project fails on apply. When `project` changes because the Project was renamed, only the state changes. Delete waits until Weblate has removed the Category in the background.
+
+Each Inherited setting is a pair of attributes, such as `license` and `inherit_license`. With `license` set, the provider sends `inherit_license = false` with it. With `inherit_license = true`, the setting comes from the next level up: Category, Project, then Workspace. Setting both fails at plan, and with both omitted the setting is not managed. While a setting is inherited, state holds the value that Weblate stores for this object, which has no effect.
 
 ## Example Usage
 
@@ -42,7 +46,31 @@ resource "weblate_category" "api" {
 
 ### Optional
 
+- `add_message` (String) Template of the commit message for a new translation.
+- `addon_message` (String) Template of the commit message for a change by an Add-on.
+- `agreement` (String) Contributor license agreement that users have to accept before they translate.
 - `category` (String) `id` of the parent Category, which is its slug path and must start with `project`. Without it, the Category is at the root of the Project.
+- `commit_message` (String) Template of the commit message for a translation.
+- `delete_message` (String) Template of the commit message for a removed translation.
+- `enforced_checks` (Set of String) IDs of the quality checks that translators cannot dismiss, such as `same`. The provider does not check the IDs; Weblate rejects an unknown one.
+- `inherit_add_message` (Boolean) Whether `add_message` comes from the next level up instead of this object. `true` together with `add_message` fails at plan. Omitted while `add_message` is set, it is `false`.
+- `inherit_addon_message` (Boolean) Whether `addon_message` comes from the next level up instead of this object. `true` together with `addon_message` fails at plan. Omitted while `addon_message` is set, it is `false`.
+- `inherit_agreement` (Boolean) Whether `agreement` comes from the next level up instead of this object. `true` together with `agreement` fails at plan. Omitted while `agreement` is set, it is `false`.
+- `inherit_commit_message` (Boolean) Whether `commit_message` comes from the next level up instead of this object. `true` together with `commit_message` fails at plan. Omitted while `commit_message` is set, it is `false`.
+- `inherit_delete_message` (Boolean) Whether `delete_message` comes from the next level up instead of this object. `true` together with `delete_message` fails at plan. Omitted while `delete_message` is set, it is `false`.
+- `inherit_enforced_checks` (Boolean) Whether `enforced_checks` comes from the next level up instead of this object. `true` together with `enforced_checks` fails at plan. Omitted while `enforced_checks` is set, it is `false`.
+- `inherit_language_code_style` (Boolean) Whether `language_code_style` comes from the next level up instead of this object. `true` together with `language_code_style` fails at plan. Omitted while `language_code_style` is set, it is `false`.
+- `inherit_license` (Boolean) Whether `license` comes from the next level up instead of this object. `true` together with `license` fails at plan. Omitted while `license` is set, it is `false`.
+- `inherit_merge_message` (Boolean) Whether `merge_message` comes from the next level up instead of this object. `true` together with `merge_message` fails at plan. Omitted while `merge_message` is set, it is `false`.
+- `inherit_new_lang` (Boolean) Whether `new_lang` comes from the next level up instead of this object. `true` together with `new_lang` fails at plan. Omitted while `new_lang` is set, it is `false`.
+- `inherit_pull_message` (Boolean) Whether `pull_message` comes from the next level up instead of this object. `true` together with `pull_message` fails at plan. Omitted while `pull_message` is set, it is `false`.
+- `inherit_secondary_language` (Boolean) Whether `secondary_language` comes from the next level up instead of this object. `true` together with `secondary_language` fails at plan. Omitted while `secondary_language` is set, it is `false`.
+- `language_code_style` (String) Style of the language codes in file names, such as `posix` or `bcp`. Empty means the style of the file format.
+- `license` (String) License of the translations, as one of the license IDs that the Weblate instance offers, such as `MIT`.
+- `merge_message` (String) Template of the commit message for a merge of the upstream repository.
+- `new_lang` (String) How users start a new translation: `add`, `contact`, `url`, `existing` or `none`. `url` needs `instructions` on the Project.
+- `pull_message` (String) Template of the title and description of a pull request that Weblate opens.
+- `secondary_language` (Number) Numeric ID of the Weblate language that Weblate shows translators in addition to the source language.
 - `timeouts` (Block, Optional) (see [below for nested schema](#nestedblock--timeouts))
 
 ### Read-Only

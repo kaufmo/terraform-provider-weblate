@@ -15,6 +15,9 @@ resource "weblate_component" "app" {
   file_format_params = jsonencode({
     po_line_wrap = -1
   })
+
+  # Takes the license from the Category or the Project.
+  inherit_license = true
 }
 
 # A Linked Component: it uses the repository of weblate_component.app, with translation files of its own.

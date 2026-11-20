@@ -3,12 +3,12 @@
 page_title: "weblate_project Data Source - weblate"
 subcategory: ""
 description: |-
-  Reads a Weblate Project by its slug, for example to grant a Group access to a Project that another configuration manages.
+  Reads a Weblate Project by its slug, for example to grant a Group access to a Project that another configuration manages. While an Inherited setting is inherited, such as with inherit_license = true, the setting holds the value that Weblate stores for the Project, which has no effect.
 ---
 
 # weblate_project (Data Source)
 
-Reads a Weblate Project by its slug, for example to grant a Group access to a Project that another configuration manages.
+Reads a Weblate Project by its slug, for example to grant a Group access to a Project that another configuration manages. While an Inherited setting is inherited, such as with `inherit_license = true`, the setting holds the value that Weblate stores for the Project, which has no effect.
 
 ## Example Usage
 
@@ -28,18 +28,42 @@ data "weblate_project" "docs" {
 ### Read-Only
 
 - `access_control` (Number) Access control mode: `0` public, `1` protected, `100` private, `200` custom.
+- `add_message` (String) Template of the commit message for a new translation.
+- `addon_message` (String) Template of the commit message for a change by an Add-on.
+- `agreement` (String) Contributor license agreement that users have to accept before they translate.
 - `autoclean_tm` (Boolean) Whether Weblate removes outdated entries from the Project's translation memory.
 - `check_flags` (String) Translation flags that customize the quality checks of the whole Project.
+- `commit_message` (String) Template of the commit message for a translation.
 - `commit_policy` (Number) Which translations Weblate commits: `0` all, `20` all except those that need editing, `30` only approved ones.
 - `contribute_shared_tm` (Boolean) Whether the Project contributes to the shared translation memory.
 - `contribute_workspace_tm` (Boolean) Whether the Project contributes to the translation memory of its Workspace.
+- `delete_message` (String) Template of the commit message for a removed translation.
 - `enable_hooks` (Boolean) Whether repository notification hooks can update the Project.
 - `enforced_2fa` (Boolean) Whether contributors need two-factor authentication.
+- `enforced_checks` (Set of String) IDs of the quality checks that translators cannot dismiss, such as `same`. The provider does not check the IDs; Weblate rejects an unknown one.
 - `id` (String) The slug of the Project.
+- `inherit_add_message` (Boolean) Whether `add_message` comes from the Workspace instead of the Project.
+- `inherit_addon_message` (Boolean) Whether `addon_message` comes from the Workspace instead of the Project.
+- `inherit_agreement` (Boolean) Whether `agreement` comes from the Workspace instead of the Project.
+- `inherit_commit_message` (Boolean) Whether `commit_message` comes from the Workspace instead of the Project.
+- `inherit_delete_message` (Boolean) Whether `delete_message` comes from the Workspace instead of the Project.
+- `inherit_enforced_checks` (Boolean) Whether `enforced_checks` comes from the Workspace instead of the Project.
+- `inherit_language_code_style` (Boolean) Whether `language_code_style` comes from the Workspace instead of the Project.
+- `inherit_license` (Boolean) Whether `license` comes from the Workspace instead of the Project.
+- `inherit_merge_message` (Boolean) Whether `merge_message` comes from the Workspace instead of the Project.
+- `inherit_new_lang` (Boolean) Whether `new_lang` comes from the Workspace instead of the Project.
+- `inherit_pull_message` (Boolean) Whether `pull_message` comes from the Workspace instead of the Project.
+- `inherit_secondary_language` (Boolean) Whether `secondary_language` comes from the Workspace instead of the Project.
 - `instructions` (String) Instructions for translators.
 - `language_aliases` (String) Language code mappings, such as `zh_CN:zh-Hans,en_US:en`.
+- `language_code_style` (String) Style of the language codes in file names, such as `posix` or `bcp`. Empty means the style of the file format.
+- `license` (String) License of the translations, as one of the license IDs that the Weblate instance offers, such as `MIT`.
+- `merge_message` (String) Template of the commit message for a merge of the upstream repository.
 - `name` (String) Display name of the Project.
+- `new_lang` (String) How users start a new translation: `add`, `contact`, `url`, `existing` or `none`. `url` needs `instructions` on the Project.
 - `public_sharing` (Boolean) Whether the Project can be shared publicly.
+- `pull_message` (String) Template of the title and description of a pull request that Weblate opens.
+- `secondary_language` (Number) Numeric ID of the Weblate language that Weblate shows translators in addition to the source language.
 - `source_review` (Boolean) Whether source strings need a review.
 - `translation_review` (Boolean) Whether translations need a review by a reviewer before they are approved.
 - `use_shared_tm` (Boolean) Whether the Project uses the shared translation memory.
