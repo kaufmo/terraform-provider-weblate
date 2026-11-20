@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -244,6 +246,147 @@ func TestAccComponentResourceUnreachableRepository(t *testing.T) {
 			{
 				Config:      config,
 				ExpectError: regexp.MustCompile(`Could\s+not\s+update\s+repository`),
+			},
+		},
+	})
+}
+
+func TestAccComponentResourceLinked(t *testing.T) {
+	project := uniqueSlug()
+	config := componentConfig(project, "", "test", "") + `
+resource "weblate_component" "linked" {
+  project     = weblate_project.test.slug
+  name        = "Component linked"
+  slug        = "linked"
+  repo        = "weblate://${weblate_component.test.id}"
+  filemask    = "po/*.po"
+  new_base    = "po/messages.pot"
+  file_format = "po"
+}
+
+# The same repository as weblate_component.test, which create does not turn into a link.
+resource "weblate_component" "unlinked" {
+  project     = weblate_project.test.slug
+  name        = "Component unlinked"
+  slug        = "unlinked"
+  repo        = "http://git.test.example/demo.git"
+  filemask    = "po/*.po"
+  new_base    = "po/messages.pot"
+  file_format = "po"
+  depends_on  = [weblate_component.test]
+}`
+	expect := func(name, attribute string, value knownvalue.Check) statecheck.StateCheck {
+		return statecheck.ExpectKnownValue("weblate_component."+name, tfjsonpath.New(attribute), value)
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccClient(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             checkProjectsDestroyed(t, project),
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				ConfigStateChecks: []statecheck.StateCheck{
+					expect("linked", "linked_component", knownvalue.StringExact(project+"/test")),
+					expect("linked", "repo", knownvalue.StringExact("weblate://"+project+"/test")),
+					// Weblate returns the branch of the linked Component.
+					expect("linked", "branch", knownvalue.StringExact("main")),
+					expect("unlinked", "linked_component", knownvalue.Null()),
+					expect("unlinked", "repo", knownvalue.StringExact("http://git.test.example/demo.git")),
+					expect("test", "linked_component", knownvalue.Null()),
+				},
+			},
+			{
+				ResourceName:            "weblate_component.linked",
+				ImportState:             true,
+				ImportStateId:           project + "/linked",
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"timeouts"},
+			},
+		},
+	})
+}
+
+// grantReviewStrings adds the user reviewer of test/weblate/start.sh to a new Group with the Role Review strings on
+// all Projects. The Role lacks vcs.view, and Weblate's default Groups of the user grant nothing on private Projects.
+func grantReviewStrings(t *testing.T) {
+	t.Helper()
+	c := testAccClient(t)
+	if os.Getenv("WEBLATE_REVIEWER_API_TOKEN") == "" {
+		t.Fatal("WEBLATE_REVIEWER_API_TOKEN must be set for acceptance tests; start Weblate with test/weblate/start.sh")
+	}
+	ctx := context.Background()
+	roles, err := c.ListRoles(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(roles, func(r client.Role) bool { return r.Name == "Review strings" })
+	if i < 0 {
+		t.Fatal("Weblate has no Role Review strings")
+	}
+	g, err := c.CreateGroup(ctx, map[string]any{"name": uniqueSlug(), "project_selection": 1, "language_selection": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := c.DeleteGroup(ctx, g.ID); err != nil && !client.IsNotFound(err) {
+			t.Errorf("deleting Group %d: %v", g.ID, err)
+		}
+	})
+	for ref, body := range map[string]map[string]any{
+		client.GroupRef(g.ID) + "roles/": {"role_id": roles[i].ID},
+		"users/reviewer/groups/":         {"group_id": g.ID},
+	} {
+		if err := c.Do(ctx, http.MethodPost, ref, body, nil); err != nil {
+			t.Fatalf("POST %s: %v", ref, err)
+		}
+	}
+}
+
+func TestAccComponentResourceWithoutVCSView(t *testing.T) {
+	project := uniqueSlug()
+	// Private, so that the default Group Users, with vcs.view on public Projects, grants nothing on it.
+	config := strings.Replace(componentConfig(project, "", "test", `branch = "main"`),
+		`web  = "https://example.com"`, "web  = \"https://example.com\"\n  access_control = 100", 1)
+	asReviewer := fmt.Sprintf(`
+provider "weblate" {
+  token = %q
+}
+`, os.Getenv("WEBLATE_REVIEWER_API_TOKEN")) + config
+	emptyPlan := resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()}}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { grantReviewStrings(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             checkProjectsDestroyed(t, project),
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+			},
+			{
+				// The refresh with the reviewer's token returns the warning and keeps the values from state.
+				Config:           asReviewer,
+				ConfigPlanChecks: emptyPlan,
+				ConfigStateChecks: []statecheck.StateCheck{
+					expectComponent("repo", knownvalue.StringExact("http://git.test.example/demo.git")),
+					expectComponent("vcs", knownvalue.StringExact("git")),
+				},
+				Check: func(*terraform.State) error {
+					c, err := client.New(os.Getenv("WEBLATE_URL"), os.Getenv("WEBLATE_REVIEWER_API_TOKEN"))
+					if err != nil {
+						return err
+					}
+					comp, err := c.GetComponent(context.Background(), client.ComponentRef(project+"/test"))
+					if err == nil && string(comp.Fields["vcs"]) != "null" {
+						err = fmt.Errorf("weblate returns vcs %s to the reviewer, want null", comp.Fields["vcs"])
+					}
+					return err
+				},
+			},
+			{
+				// Back to the admin token, which the destroy needs.
+				Config:           config,
+				ConfigPlanChecks: emptyPlan,
 			},
 		},
 	})

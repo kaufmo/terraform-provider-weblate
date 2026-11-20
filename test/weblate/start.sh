@@ -1,6 +1,7 @@
 #!/bin/sh
-# Starts a fresh Weblate instance for the acceptance tests and prints WEBLATE_URL and WEBLATE_API_TOKEN as KEY=value
-# lines, for `export $(test/weblate/start.sh)` or `test/weblate/start.sh >> "$GITHUB_ENV"`.
+# Starts a fresh Weblate instance for the acceptance tests and prints WEBLATE_URL, WEBLATE_API_TOKEN of the user admin
+# and WEBLATE_REVIEWER_API_TOKEN of the user reviewer, who is only in Weblate's default Groups, as KEY=value lines, for
+# `export $(test/weblate/start.sh)` or `test/weblate/start.sh >> "$GITHUB_ENV"`.
 #
 # WEBLATE_IMAGE overrides the image from the Dockerfile, WEBLATE_PORT the local port (default 8080).
 set -eu
@@ -10,6 +11,7 @@ WEBLATE_IMAGE=${WEBLATE_IMAGE:-$(sed -n 's/^FROM //p' Dockerfile)}
 export WEBLATE_IMAGE
 url=http://127.0.0.1:${WEBLATE_PORT:-8080}
 token=wlu_acceptancetesttoken0001
+reviewer_token=wlu_acceptancetestreviewer0001
 
 docker compose down -v --remove-orphans >&2
 docker compose up -d >&2
@@ -38,7 +40,10 @@ Token = apps.get_model('authtoken', 'Token')
 user = User.objects.get(username='admin')
 Token.objects.filter(user=user).delete()
 Token.objects.create(user=user, key='$token')
+# Weblate's API cannot create the token of another user; the tests add this user to the Groups they need.
+reviewer = User.objects.create(username='reviewer', full_name='Reviewer', email='reviewer@example.com')
+Token.objects.create(user=reviewer, key='$reviewer_token')
 " >&2
 curl -fsS -o /dev/null -H "Authorization: Token $token" "$url/api/"
 
-printf 'WEBLATE_URL=%s\nWEBLATE_API_TOKEN=%s\n' "$url" "$token"
+printf 'WEBLATE_URL=%s\nWEBLATE_API_TOKEN=%s\nWEBLATE_REVIEWER_API_TOKEN=%s\n' "$url" "$token" "$reviewer_token"

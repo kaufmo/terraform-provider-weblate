@@ -13,7 +13,7 @@ The acceptance tests run against a real Weblate instance in Docker, next to a st
 repository `http://git.test.example/demo.git`. They need Docker, Go, and OpenTofu or Terraform.
 
 ```sh
-# Starts a fresh Weblate on port 8080 and exports WEBLATE_URL and WEBLATE_API_TOKEN.
+# Starts a fresh Weblate on port 8080 and exports WEBLATE_URL, WEBLATE_API_TOKEN and WEBLATE_REVIEWER_API_TOKEN.
 export $(test/weblate/start.sh)
 TF_ACC=1 go test ./... -run '^TestAcc' -v
 docker compose -f test/weblate/compose.yaml down -v
