@@ -1,0 +1,62 @@
+name: weblate-acc
+
+services:
+  database:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: weblate
+      POSTGRES_PASSWORD: weblate
+      POSTGRES_DB: weblate
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  cache:
+    image: valkey/valkey:8-alpine
+
+  gitinit:
+    image: alpine/git:latest
+    entrypoint: ["/bin/sh", "/gitinit.sh"]
+    volumes:
+      - ./gitinit.sh:/gitinit.sh:ro
+      - git:/srv/git
+
+  gitserver:
+    image: nginx:alpine
+    volumes:
+      - git:/usr/share/nginx/html:ro
+    networks:
+      default:
+        # Django's URLValidator rejects host names without a TLD.
+        aliases: [git.test.example]
+    depends_on:
+      gitinit:
+        condition: service_completed_successfully
+
+  weblate:
+    image: ${WEBLATE_IMAGE:?start the stack with start.sh, which sets WEBLATE_IMAGE}
+    ports:
+      - "127.0.0.1:${WEBLATE_PORT:-8080}:8080"
+    environment:
+      WEBLATE_SITE_DOMAIN: localhost
+      WEBLATE_ALLOWED_HOSTS: "*"
+      WEBLATE_ADMIN_NAME: Admin
+      WEBLATE_ADMIN_EMAIL: admin@example.com
+      WEBLATE_ADMIN_PASSWORD: acceptance-test-admin
+      WEBLATE_DEBUG: "0"
+      WEBLATE_REGISTRATION_OPEN: "0"
+      POSTGRES_HOST: database
+      POSTGRES_USER: weblate
+      POSTGRES_PASSWORD: weblate
+      POSTGRES_DB: weblate
+      POSTGRES_DATABASE: weblate
+      REDIS_HOST: cache
+    # No tmpfs for /app/cache: Docker mounts tmpfs noexec, and Weblate's check weblate.C044 then stops the container.
+    volumes:
+      - ./settings-override.py:/app/data/settings-override.py:ro
+    depends_on:
+      - database
+      - cache
+      - gitserver
+
+volumes:
+  git:
