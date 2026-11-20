@@ -25,7 +25,7 @@ jobs:
           - { client: terraform, client-version: 1.11.x, weblate: latest, image: "" }
           - { client: terraform, client-version: latest, weblate: latest, image: "" }
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
