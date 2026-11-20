@@ -89,13 +89,11 @@ func (r *groupResource) Metadata(_ context.Context, req resource.MetadataRequest
 
 func (r *groupResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	selection := func(attribute, description string) schema.Attribute {
-		names := slices.Sorted(maps.Keys(selections[attribute]))
 		return schema.StringAttribute{
-			MarkdownDescription: description + " One of `" + strings.Join(names, "`, `") + "`. Weblate's default is " +
-				"`manual`.",
+			MarkdownDescription: description + " Weblate's default is `manual`.",
 			Optional:      true,
 			Computed:      true,
-			Validators:    []validator.String{oneOfValidator{names}},
+			Validators:    []validator.String{oneOfValidator{slices.Sorted(maps.Keys(selections[attribute]))}},
 			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 		}
 	}
