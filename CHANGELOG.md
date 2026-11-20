@@ -3,3 +3,4 @@
 FEATURES:
 
 * **New Provider:** `weblate` with the `url` and `token` arguments, which fall back to the `WEBLATE_URL` and `WEBLATE_API_TOKEN` environment variables.
+* **New Data Source:** `weblate_project`, looked up by `slug`.
