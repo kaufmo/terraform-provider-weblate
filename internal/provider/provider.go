@@ -107,5 +107,5 @@ func (p *weblateProvider) Resources(context.Context) []func() resource.Resource 
 }
 
 func (p *weblateProvider) DataSources(context.Context) []func() datasource.DataSource {
-	return nil
+	return []func() datasource.DataSource{NewProjectDataSource}
 }
