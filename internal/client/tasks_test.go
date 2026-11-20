@@ -123,3 +123,46 @@ func TestWaitForDeletionReportsProgressOnTimeout(t *testing.T) {
 		t.Errorf("WaitForDeletion error = %v, want one with the progress 40%%", err)
 	}
 }
+
+// TestWaitForDeletionResendsTheDeleteWithoutTask covers deletions that return no task URL, such as of a Component:
+// Weblate's removal task can fail without any sign, so the wait sends DELETE again once a minute.
+func TestWaitForDeletionResendsTheDeleteWithoutTask(t *testing.T) {
+	for name, tc := range map[string]struct {
+		taskRef     string
+		wantDeletes int
+	}{
+		"without task": {"", 2},
+		"with task":    {"/api/tasks/1/", 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			gets, deletes := 0, 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case r.Method == http.MethodDelete:
+					deletes++
+					w.WriteHeader(http.StatusNoContent)
+				case r.URL.Path == "/api/tasks/1/":
+					_, _ = w.Write([]byte(`{"completed": false, "progress": 10, "result": null, "log": ""}`))
+				default:
+					if gets++; gets > 65 {
+						w.WriteHeader(http.StatusNotFound)
+						_, _ = w.Write([]byte(`{"detail": "Not found."}`))
+						return
+					}
+					_, _ = w.Write([]byte(`{"slug": "test"}`))
+				}
+			}))
+			t.Cleanup(srv.Close)
+			c := newTestClient(t, srv.URL)
+			noSleep(c)
+
+			if err := c.WaitForDeletion(context.Background(), "components/docs/test/", tc.taskRef); err != nil {
+				t.Fatalf("WaitForDeletion: %v", err)
+			}
+			if deletes != tc.wantDeletes {
+				t.Errorf("DELETEs = %d, want %d", deletes, tc.wantDeletes)
+			}
+		})
+	}
+}

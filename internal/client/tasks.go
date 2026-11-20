@@ -8,7 +8,11 @@ import (
 	"time"
 )
 
-const pollInterval = 2 * time.Second
+const (
+	pollInterval = 2 * time.Second
+	// resendInterval is how long a deletion without a task waits before it sends DELETE again.
+	resendInterval = time.Minute
+)
 
 // Task is a background task of Weblate, read from /api/tasks/{id}/.
 type Task struct {
@@ -31,9 +35,13 @@ func (t *Task) Failure() string {
 
 // WaitForDeletion polls objectRef until it returns 404, which is the only sign that Weblate finished a deletion in
 // the background. taskRef is the task URL from the DELETE response, or "" when Weblate returned none. A failed task
-// ends the wait with an error. When ctx ends first, the error names the task's progress; the task keeps running.
+// ends the wait with an error. Without a task, as for a Category or Component, Weblate gives no sign when its removal
+// task fails, for example on a lock that an Add-on holds, so the wait sends DELETE again once a minute; a second
+// removal task finds nothing left to remove when the first one succeeded. When ctx ends first, the error names the
+// task's progress; the task keeps running.
 func (c *Client) WaitForDeletion(ctx context.Context, objectRef, taskRef string) error {
 	progress := -1
+	sinceDelete := time.Duration(0)
 	for {
 		err := c.Do(ctx, http.MethodGet, objectRef, nil, nil)
 		if IsNotFound(err) {
@@ -62,9 +70,20 @@ func (c *Client) WaitForDeletion(ctx context.Context, objectRef, taskRef string)
 				progress = task.Progress
 			}
 		}
+		if taskRef == "" && sinceDelete >= resendInterval {
+			err := c.Do(ctx, http.MethodDelete, objectRef, nil, nil)
+			switch {
+			case ctx.Err() != nil:
+				return waitTimeout("the deletion", progress)
+			case err != nil && !IsNotFound(err):
+				return err
+			}
+			sinceDelete = 0
+		}
 		if err := c.sleep(ctx, pollInterval); err != nil {
 			return waitTimeout("the deletion", progress)
 		}
+		sinceDelete += pollInterval
 	}
 }
 
