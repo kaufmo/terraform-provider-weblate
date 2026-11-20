@@ -58,6 +58,9 @@ _Avoid_: team
 A Group that Weblate creates on its own for every Project, such as Administration or Review.
 _Avoid_: default team, internal group
 
+**Component list**:
+A named set of Components, possibly from several Projects, that a Group can be granted access to.
+
 **Grant**:
 One Role, Project, Language, Component or Component list that a Group gives its users access to.
 _Avoid_: association, permission
