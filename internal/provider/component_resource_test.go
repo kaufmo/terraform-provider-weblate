@@ -377,6 +377,27 @@ func TestComponentPlanRejectsAnotherSourceLanguage(t *testing.T) {
 	}
 }
 
+func TestComponentSourceLanguageWithSurroundingWhitespaceIsTheSameLanguage(t *testing.T) {
+	// Weblate strips the whitespace from the language code it receives.
+	config := withAttributes(referenceConfig, map[string]any{"source_language": " en\n"})
+	tree := referenceTree(storedReference)
+	resp, _ := createComponent(t, func(r request) (int, string) {
+		if r.method == http.MethodPost {
+			return http.StatusCreated, storedReference
+		}
+		return tree(r)
+	}, config)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Create: %v", resp.Diagnostics)
+	}
+
+	// After an import, state has the code as Weblate returns it.
+	plan := modifyComponentPlan(t, referenceState, withAttributes(referenceState, map[string]any{"source_language": " en\n"}))
+	if plan.Diagnostics.HasError() {
+		t.Errorf("ModifyPlan: %v", plan.Diagnostics)
+	}
+}
+
 func TestComponentPathsThatWeblateWouldCleanFailValidation(t *testing.T) {
 	_, s := componentResourceWith(nil)
 	for value, cleaned := range map[string]string{"./po/*.po": "po/*.po", "/po/*.po": "po/*.po",

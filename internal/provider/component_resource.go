@@ -406,6 +406,7 @@ func (r *componentResource) Schema(ctx context.Context, _ resource.SchemaRequest
 			MarkdownDescription: "Code of the language of the source strings, such as `en`, the default. Weblate " +
 				"cannot change it after create, so a change fails at plan; apply with `-replace` to delete the " +
 				"Component with its translations and create it again.",
+			CustomType:    trimmedStringType{},
 			Optional:      true,
 			Computed:      true,
 			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
@@ -575,11 +576,14 @@ func (r *componentResource) ModifyPlan(ctx context.Context, req resource.ModifyP
 	if req.State.Raw.IsNull() {
 		return
 	}
-	var planned, current, id types.String
+	var planned, current trimmedString
+	var id types.String
 	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("source_language"), &planned)...)
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("source_language"), &current)...)
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &id)...)
-	if !planned.IsUnknown() && !current.IsNull() && !planned.Equal(current) {
+	same, diags := planned.StringSemanticEquals(ctx, current)
+	resp.Diagnostics.Append(diags...)
+	if !planned.IsUnknown() && !current.IsNull() && !same {
 		resp.Diagnostics.AddAttributeError(path.Root("source_language"), "Source language cannot change",
 			fmt.Sprintf("Weblate cannot change the source language of the Component %s from %s to %s. To delete "+
 				"the Component with its translations and create it again, apply with -replace for this resource.",
@@ -675,7 +679,7 @@ func (r *componentResource) store(ctx context.Context, comp *client.Component, t
 		"weblate_id":      types.Int64Value(comp.ID),
 		"project":         types.StringValue(project),
 		"category":        parentFromSlugPath(slugPath, comp.Category != nil),
-		"source_language": types.StringValue(comp.SourceLanguage.Code),
+		"source_language": trimmedStringValue(comp.SourceLanguage.Code),
 		"timeouts":        t,
 	}
 	for name, f := range componentFields {
