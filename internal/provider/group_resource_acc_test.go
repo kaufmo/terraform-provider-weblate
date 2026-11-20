@@ -119,34 +119,54 @@ resource "weblate_group" "test" {
 	})
 }
 
-// TestAccGroupResourceImportBuiltIn imports the Administration Group that Weblate creates for every Project.
+// TestAccGroupResourceImportBuiltIn imports the Administration Group that Weblate creates for every Project and
+// manages its Roles.
 func TestAccGroupResourceImportBuiltIn(t *testing.T) {
 	slug := uniqueSlug()
+	config := func(roles string) string {
+		return fmt.Sprintf(`
+resource "weblate_group" "builtin" {
+  name    = "Administration"
+  project = %q
+  roles   = [%s]
+}`, slug, roles)
+	}
+	expectRoles := func(roles ...string) statecheck.StateCheck {
+		return statecheck.ExpectKnownValue("weblate_group.builtin", tfjsonpath.New("roles"), stringSetExact(roles...))
+	}
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccClient(t)
 			createTestProject(t, slug)
 		},
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		Steps: []resource.TestStep{{
-			Config: fmt.Sprintf(`
-resource "weblate_group" "builtin" {
-  name    = "Administration"
-  project = %q
-}`, slug),
-			ResourceName: "weblate_group.builtin",
-			ImportState:  true,
-			ImportStateIdFunc: func(*terraform.State) (string, error) {
-				return builtInGroupID(t, slug, "Administration")
+		Steps: []resource.TestStep{
+			{
+				Config:             config(`"Administration"`),
+				ResourceName:       "weblate_group.builtin",
+				ImportState:        true,
+				ImportStatePersist: true,
+				ImportStateIdFunc: func(*terraform.State) (string, error) {
+					return builtInGroupID(t, slug, "Administration")
+				},
+				ImportStateCheck: func(states []*terraform.InstanceState) error {
+					if len(states) != 1 || states[0].Attributes["name"] != "Administration" ||
+						states[0].Attributes["project"] != slug || states[0].Attributes["roles.#"] != "1" {
+						return fmt.Errorf("imported %v, want the Administration Group of Project %s with one Role",
+							states, slug)
+					}
+					return nil
+				},
 			},
-			ImportStateCheck: func(states []*terraform.InstanceState) error {
-				if len(states) != 1 || states[0].Attributes["name"] != "Administration" ||
-					states[0].Attributes["project"] != slug {
-					return fmt.Errorf("imported %v, want the Administration Group of Project %s", states, slug)
-				}
-				return nil
+			{
+				Config:            config(`"Administration", "Review strings"`),
+				ConfigStateChecks: []statecheck.StateCheck{expectRoles("Administration", "Review strings")},
 			},
-		}},
+			{
+				Config:            config(`"Administration"`),
+				ConfigStateChecks: []statecheck.StateCheck{expectRoles("Administration")},
+			},
+		},
 	})
 }
 
