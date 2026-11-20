@@ -59,4 +59,4 @@ jobs:
           TF_ACC: "1"
       - name: Show the Weblate and git server logs
         if: failure()
-        run: docker compose -f test/weblate/compose.yaml logs --tail 200 weblate gitserver
+        run: docker compose -f test/weblate/compose.yaml logs --tail 1000 weblate gitserver
