@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -17,6 +18,8 @@ var readBackSchema = schema.Schema{Attributes: map[string]schema.Attribute{
 	"instructions":   schema.StringAttribute{CustomType: trimmedStringType{}, Optional: true, Computed: true},
 	"access_control": schema.Int64Attribute{Optional: true, Computed: true},
 	"enable_hooks":   schema.BoolAttribute{Optional: true, Computed: true},
+	"file_format_params": schema.StringAttribute{CustomType: jsontypes.NormalizedType{}, Optional: true,
+		Computed: true},
 }}
 
 // readBackObject returns a value of readBackSchema with the given attributes and null for the others.
@@ -91,5 +94,25 @@ func TestReadBackReportsEveryDifferentAttribute(t *testing.T) {
 	)
 	if len(errs) != 2 {
 		t.Errorf("diagnostics = %v, want two errors", errs)
+	}
+}
+
+func TestReadBackIgnoresJSONKeyOrderAndNamesChangedKeys(t *testing.T) {
+	if errs, _ := readBack(
+		map[string]any{"name": "Docs", "file_format_params": `{"b": 2, "a": 1}`},
+		map[string]any{"name": "Docs", "file_format_params": `{"a":1,"b":2}`},
+	); errs != nil {
+		t.Errorf("diagnostics = %v, want none for another key order", errs)
+	}
+
+	errs, paths := readBack(
+		map[string]any{"name": "Docs", "file_format_params": `{"po_line_wrap": 77, "po_typo": true, "keep": "x"}`},
+		map[string]any{"name": "Docs", "file_format_params": `{"po_line_wrap": "77", "keep": "x"}`},
+	)
+	if len(errs) != 1 || !paths[0].Equal(path.Root("file_format_params")) {
+		t.Fatalf("diagnostics = %v at %v, want one error on file_format_params", errs, paths)
+	}
+	if !strings.Contains(errs[0], "po_line_wrap, po_typo.") {
+		t.Errorf("error %q does not name exactly the keys po_line_wrap and po_typo", errs[0])
 	}
 }
