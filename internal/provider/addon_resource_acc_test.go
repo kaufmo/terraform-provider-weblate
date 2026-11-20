@@ -16,8 +16,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
-
-	"github.com/kaufmo/terraform-provider-weblate/internal/client"
 )
 
 // addonConfig returns componentConfig with the Component in the Category a and the given weblate_addon resources.
@@ -135,24 +133,34 @@ func TestAccAddonResourceAdoptsAnInstalledAddon(t *testing.T) {
 		CheckDestroy:             checkProjectsDestroyed(t, project),
 		Steps: []resource.TestStep{
 			{
-				Config: addonConfig(project, ""),
-			},
-			{
-				// Stands in for an Add-on that Weblate installs on its own: the po format of the test repository
-				// gets none.
-				PreConfig: func() {
-					_, err := testAccClient(t).CreateAddon(context.Background(),
-						client.ComponentRef(project+"/a/test"), map[string]any{"name": "weblate.gettext.mo"})
-					if err != nil {
-						t.Fatalf("installing the Add-on: %v", err)
-					}
-				},
-				Config: addonConfig(project, moAddon(onComponent, `configuration = jsonencode({ fuzzy = true })`)),
+				// Weblate installs weblate.flags.same_edit on its own when it creates a Component in the srt format.
+				Config: fmt.Sprintf(`
+resource "weblate_project" "test" {
+  name = %[1]q
+  slug = %[1]q
+  web  = "https://example.com"
+}
+
+resource "weblate_component" "test" {
+  project        = weblate_project.test.slug
+  name           = "Subtitles"
+  slug           = "subtitles"
+  repo           = "http://git.test.example/demo.git"
+  filemask       = "srt/*.srt"
+  template       = "srt/en.srt"
+  file_format    = "srt"
+  push_on_commit = false
+}
+
+resource "weblate_addon" "test" {
+  component = weblate_component.test.id
+  name      = "weblate.flags.same_edit"
+}`, project),
 				ConfigPlanChecks: resource.ConfigPlanChecks{PostApplyPostRefresh: []plancheck.PlanCheck{
 					plancheck.ExpectEmptyPlan(),
 				}},
 				ConfigStateChecks: []statecheck.StateCheck{
-					expectAddon("configuration", knownvalue.StringExact(`{"fuzzy":true}`)),
+					expectAddon("component", knownvalue.StringExact(project+"/subtitles")),
 				},
 			},
 		},
