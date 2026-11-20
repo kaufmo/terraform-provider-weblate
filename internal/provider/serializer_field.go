@@ -109,15 +109,7 @@ func (f serializerField) value(raw json.RawMessage) (attr.Value, error) {
 		}
 		return set, nil
 	case jsonField:
-		var v any
-		d := json.NewDecoder(bytes.NewReader(raw))
-		d.UseNumber()
-		if err := d.Decode(&v); err != nil || v == nil {
-			return jsontypes.NewNormalizedNull(), err
-		}
-		// Sorted keys, as jsonencode writes them, so that an imported value equals the configured one.
-		sorted, err := json.Marshal(v)
-		return jsontypes.NewNormalizedValue(string(sorted)), err
+		return normalizedJSON(raw)
 	}
 	var s *string
 	err := json.Unmarshal(raw, &s)
@@ -125,6 +117,22 @@ func (f serializerField) value(raw json.RawMessage) (attr.Value, error) {
 		*s = withoutUserinfo(*s)
 	}
 	return trimmedStringPointerValue(s), err
+}
+
+// normalizedJSON converts a JSON field from a Weblate response. A missing field or null is null.
+func normalizedJSON(raw json.RawMessage) (jsontypes.Normalized, error) {
+	if len(raw) == 0 {
+		return jsontypes.NewNormalizedNull(), nil
+	}
+	var v any
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.UseNumber()
+	if err := d.Decode(&v); err != nil || v == nil {
+		return jsontypes.NewNormalizedNull(), err
+	}
+	// Sorted keys, as jsonencode writes them, so that an imported value equals the configured one.
+	sorted, err := json.Marshal(v)
+	return jsontypes.NewNormalizedValue(string(sorted)), err
 }
 
 func (f serializerField) dataSourceAttribute() dsschema.Attribute {
