@@ -601,3 +601,59 @@ func TestComponentConfigOfALinkedComponentRejectsRepositorySettings(t *testing.T
 		})
 	}
 }
+
+// storedLinked is the Component docs/linked, linked to docs/guides/api/reference. Weblate returns the repository
+// settings of reference for it.
+const storedLinked = `{"id": 13, "slug": "linked", "name": "Linked",
+	"project": {"id": 7, "slug": "docs", "url": "http://weblate.example/api/projects/docs/"},
+	"category": null, "source_language": {"code": "en", "name": "English"},
+	"vcs": "git", "vcs_params": {}, "repo": "http://git.example/demo.git", "branch": "main", "push_branch": "",
+	"push": "", "filemask": "po/*.po", "file_format": "po", "git_export": "",
+	"linked_component": "http://weblate.example/api/components/docs/guides%252Fapi%252Freference/",
+	"url": "http://weblate.example/api/components/docs/linked/", "task_url": null}`
+
+func TestComponentReadOfALinkedComponentKeepsTheLinkInRepo(t *testing.T) {
+	for name, stateRepo := range map[string]any{"refresh": "weblate://docs/guides/api/reference",
+		"import": nil, "linked outside OpenTofu": "http://git.example/demo.git"} {
+		t.Run(name, func(t *testing.T) {
+			resp := readComponentResource(t, func(r request) (int, string) {
+				if r.path == "/api/components/docs/linked/" {
+					return http.StatusOK, storedLinked
+				}
+				return http.StatusNotFound, notFound
+			}, map[string]any{"id": "docs/linked", "weblate_id": int64(13), "project": "docs", "repo": stateRepo})
+
+			if repo := stateAttribute[trimmedString](t, resp.State, "repo"); repo.ValueString() != "weblate://docs/guides/api/reference" {
+				t.Errorf("repo = %v, want weblate://docs/guides/api/reference", repo)
+			}
+			if l := stateAttribute[types.String](t, resp.State, "linked_component"); l.ValueString() != "docs/guides/api/reference" {
+				t.Errorf("linked_component = %v, want docs/guides/api/reference", l)
+			}
+			if b := stateAttribute[trimmedString](t, resp.State, "branch"); b.ValueString() != "main" {
+				t.Errorf("branch = %v, want the branch of the linked Component", b)
+			}
+		})
+	}
+}
+
+func TestComponentCreateOfALinkedComponentPassesTheReadBack(t *testing.T) {
+	resp, _ := createComponent(t, func(r request) (int, string) {
+		if r.method == http.MethodPost || r.path == "/api/components/docs/linked/" {
+			return http.StatusCreated, storedLinked
+		}
+		return http.StatusNotFound, notFound
+	}, withAttributes(linkedConfig, map[string]any{"category": nil, "file_format_params": nil}))
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Create: %v", resp.Diagnostics)
+	}
+	if repo := stateAttribute[trimmedString](t, resp.State, "repo"); repo.ValueString() != "weblate://docs/guides/api/reference" {
+		t.Errorf("repo = %v, want the configured link", repo)
+	}
+}
+
+func TestComponentReadOfAnUnlinkedComponentHasNoLinkedComponent(t *testing.T) {
+	resp := readComponentResource(t, referenceTree(storedReference), referenceState)
+	if l := stateAttribute[types.String](t, resp.State, "linked_component"); !l.IsNull() {
+		t.Errorf("linked_component = %v, want null", l)
+	}
+}

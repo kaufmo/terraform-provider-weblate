@@ -17,8 +17,10 @@ type Component struct {
 		Slug string `json:"slug"`
 	} `json:"project"`
 	// Category is the URL of the Category that holds the Component, or nil at the Project root.
-	Category       *string `json:"category"`
-	SourceLanguage struct {
+	Category *string `json:"category"`
+	// LinkedComponent is the URL of the Component whose repository this one uses, or nil.
+	LinkedComponent *string `json:"linked_component"`
+	SourceLanguage  struct {
 		Code string `json:"code"`
 	} `json:"source_language"`
 	URL string `json:"url"`

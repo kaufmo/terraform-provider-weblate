@@ -30,8 +30,8 @@ import (
 )
 
 var (
-	_ resource.ResourceWithConfigure   = &componentResource{}
-	_ resource.ResourceWithImportState = &componentResource{}
+	_ resource.ResourceWithConfigure      = &componentResource{}
+	_ resource.ResourceWithImportState    = &componentResource{}
 	_ resource.ResourceWithModifyPlan     = &componentResource{}
 	_ resource.ResourceWithValidateConfig = &componentResource{}
 )
@@ -61,8 +61,8 @@ type componentField struct {
 }
 
 var componentFields = map[string]componentField{
-	"name":     {kind: stringField, required: true, description: "Display name of the Component. Unique in the Project."},
-	"slug":     {kind: stringField, required: true, description: "Slug of the Component, as in its URL. Unique in the Project."},
+	"name": {kind: stringField, required: true, description: "Display name of the Component. Unique in the Project."},
+	"slug": {kind: stringField, required: true, description: "Slug of the Component, as in its URL. Unique in the Project."},
 	"repo": {kind: stringField, required: true, credentials: true, description: "URL of the repository that " +
 		"Weblate clones, without credentials."},
 	"filemask": {kind: stringField, required: true, path: true, description: "Path of the translation files relative to the repository root, with `*` instead of the language code, such as `po/*.po`."},
@@ -114,7 +114,7 @@ var componentFields = map[string]componentField{
 	"manage_units": {kind: boolField, description: "Whether users can add, remove and edit source strings in " +
 		"Weblate."},
 	"enable_suggestions": {kind: boolField, description: "Whether users can make suggestions. Defaults to `true`."},
-	"suggestion_voting": {kind: boolField, description: "Whether users can vote on suggestions."},
+	"suggestion_voting":  {kind: boolField, description: "Whether users can vote on suggestions."},
 	"suggestion_autoaccept": {kind: int64Field, description: "Number of votes after which Weblate accepts a " +
 		"suggestion; `0` turns this off."},
 	"push_on_commit": {kind: boolField, description: "Whether Weblate pushes after every commit. Defaults to " +
@@ -129,8 +129,8 @@ var componentFields = map[string]componentField{
 		"found by `filemask`. Defaults to `^[^.]+$`."},
 	"key_filter": {kind: stringField, description: "Regular expression that selects the keys of a monolingual " +
 		"format."},
-	"variant_regex": {kind: stringField, description: "Regular expression that finds the variants of a string."},
-	"is_glossary": {kind: boolField, description: "Whether the Component is a glossary."},
+	"variant_regex":  {kind: stringField, description: "Regular expression that finds the variants of a string."},
+	"is_glossary":    {kind: boolField, description: "Whether the Component is a glossary."},
 	"glossary_color": {kind: stringField, description: "Color of a glossary, such as `silver`, the default."},
 }
 
@@ -386,6 +386,11 @@ func (r *componentResource) Schema(ctx context.Context, _ resource.SchemaRequest
 			Computed:      true,
 			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 		},
+		"linked_component": schema.StringAttribute{
+			MarkdownDescription: "`id` of the Component whose repository this Linked Component uses, or null. A " +
+				"Component is linked only when `repo` is `weblate://` followed by that `id`.",
+			Computed: true,
+		},
 	}
 	for name, f := range componentFields {
 		attributes[name] = f.attribute()
@@ -586,7 +591,7 @@ func (r *componentResource) finishWrite(ctx context.Context, config tfsdk.Config
 			comp = reread
 		}
 	}
-	r.store(ctx, comp, t, state, diags)
+	r.store(ctx, comp, t, plan, state, diags)
 	// Weblate does not return the credentials, and a create starts from a null state.
 	for name, f := range componentFields {
 		if !f.credentials || state.Raw.IsNull() {
@@ -606,9 +611,15 @@ func (r *componentResource) finishWrite(ctx context.Context, config tfsdk.Config
 	}
 }
 
-// store puts the Component into state, with its slug path read from Weblate.
-func (r *componentResource) store(ctx context.Context, comp *client.Component, t timeouts.Value, state *tfsdk.State,
-	diags *diag.Diagnostics) {
+// attributeSource is the plan of a create or update, or the state of a read.
+type attributeSource interface {
+	GetAttribute(ctx context.Context, p path.Path, target any) diag.Diagnostics
+}
+
+// store puts the Component into state, with its slug path read from Weblate. prior holds the values that store keeps
+// where Weblate does not return the Component's own: the repo of a Linked Component.
+func (r *componentResource) store(ctx context.Context, comp *client.Component, t timeouts.Value, prior attributeSource,
+	state *tfsdk.State, diags *diag.Diagnostics) {
 	slugPath, err := r.client.ComponentSlugPath(ctx, comp)
 	if err != nil {
 		diags.Append(apiErrorDiagnostic("Reading the Categories of the Component failed", err))
@@ -631,6 +642,23 @@ func (r *componentResource) store(ctx context.Context, comp *client.Component, t
 			return
 		}
 		values[name] = v
+	}
+	values["linked_component"] = types.StringNull()
+	if comp.LinkedComponent != nil {
+		linked, err := client.ComponentSlugPathFromURL(*comp.LinkedComponent)
+		if err != nil {
+			diags.AddAttributeError(path.Root("linked_component"), "Unexpected value from Weblate", err.Error())
+			return
+		}
+		values["linked_component"] = types.StringValue(linked)
+		// Weblate returns the repo of the linked Component.
+		var repo trimmedString
+		diags.Append(prior.GetAttribute(ctx, path.Root("repo"), &repo)...)
+		link, isLink := strings.CutPrefix(strings.TrimSpace(repo.ValueString()), repoLinkPrefix)
+		if !isLink || !strings.EqualFold(link, linked) {
+			repo = trimmedStringValue(repoLinkPrefix + linked)
+		}
+		values["repo"] = repo
 	}
 	for name, v := range values {
 		diags.Append(state.SetAttribute(ctx, path.Root(name), v)...)
@@ -670,7 +698,7 @@ func (r *componentResource) Read(ctx context.Context, req resource.ReadRequest, 
 		resp.State.RemoveResource(ctx)
 		return
 	}
-	r.store(ctx, comp, t, &resp.State, &resp.Diagnostics)
+	r.store(ctx, comp, t, req.State, &resp.State, &resp.Diagnostics)
 }
 
 func (r *componentResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
