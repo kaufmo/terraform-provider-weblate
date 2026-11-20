@@ -686,10 +686,8 @@ func (r *componentResource) Update(ctx context.Context, req resource.UpdateReque
 					id.ValueString(), weblateID.ValueInt64(), planProject.ValueString()))
 			return
 		}
-		// Slugs are unique, so the same slug means the same Project, renamed since the last refresh.
-		if comp.Project.Slug != planProject.ValueString() {
-			addProjectChangeError(&resp.Diagnostics, "Component", id.ValueString(), comp.Project.Slug,
-				planProject.ValueString(), "its translations with their history")
+		if !sameProject(&resp.Diagnostics, "Component", id.ValueString(), comp.Project.Slug,
+			planProject.ValueString(), "its translations with their history") {
 			return
 		}
 		ref = comp.URL

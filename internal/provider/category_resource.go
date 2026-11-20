@@ -201,10 +201,8 @@ func (r *categoryResource) Update(ctx context.Context, req resource.UpdateReques
 			resp.Diagnostics.Append(apiErrorDiagnostic("Reading the Category failed", err))
 			return
 		}
-		// Slugs are unique, so the same slug means the same Project, renamed since the last refresh.
-		if current != plan.Project.ValueString() {
-			addProjectChangeError(&resp.Diagnostics, "Category", state.ID.ValueString(), current,
-				plan.Project.ValueString(), "the Components inside it")
+		if !sameProject(&resp.Diagnostics, "Category", state.ID.ValueString(), current, plan.Project.ValueString(),
+			"the Components inside it") {
 			return
 		}
 	}

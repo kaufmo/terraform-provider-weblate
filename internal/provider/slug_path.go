@@ -66,11 +66,17 @@ func categoryURL(ctx context.Context, c *client.Client, slugPath types.String, d
 	return cat.URL
 }
 
-// addProjectChangeError reports a project change that Weblate cannot apply: the object is in the Project current,
-// and the API cannot move objects between Projects (ADR 0002). loss says what -replace deletes.
-func addProjectChangeError(diags *diag.Diagnostics, object, id, current, planned, loss string) {
+// sameProject reports whether the object, which Weblate has in the Project current, stays where it is with the
+// planned project. Slugs are unique, so the same slug means the same Project, renamed since the last refresh. For
+// another Project it adds an error, because the API cannot move objects between Projects (ADR 0002); loss says what
+// -replace deletes.
+func sameProject(diags *diag.Diagnostics, object, id, current, planned, loss string) bool {
+	if current == planned {
+		return true
+	}
 	diags.AddAttributeError(path.Root("project"), object+" cannot change its Project",
 		fmt.Sprintf("The %[1]s %[2]s is in the Project %[3]s, and Weblate cannot move a %[1]s to another "+
 			"Project. To delete it there and create it in the Project %[4]s, which deletes %[5]s, apply with "+
 			"-replace for this resource.", object, id, current, planned, loss))
+	return false
 }
