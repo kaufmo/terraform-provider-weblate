@@ -19,8 +19,15 @@ import (
 // readProject runs the weblate_project data source for slug against a test server that answers with status and body.
 func readProject(t *testing.T, slug string, status int, body string) datasource.ReadResponse {
 	t.Helper()
+	return readDataSource(t, NewProjectDataSource(), "/api/projects/"+slug+"/", "slug", slug, status, body)
+}
+
+// readDataSource runs ds with the one required attribute set to value against a test server that expects a GET on
+// apiPath and answers with status and body.
+func readDataSource(t *testing.T, ds datasource.DataSource, apiPath, attribute, value string, status int, body string) datasource.ReadResponse {
+	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/projects/"+slug+"/" {
+		if r.URL.Path != apiPath {
 			t.Errorf("path = %q", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -34,9 +41,8 @@ func readProject(t *testing.T, slug string, status int, body string) datasource.
 	}
 
 	ctx := context.Background()
-	ds := NewProjectDataSource().(datasource.DataSourceWithConfigure)
 	var configureResp datasource.ConfigureResponse
-	ds.Configure(ctx, datasource.ConfigureRequest{ProviderData: c}, &configureResp)
+	ds.(datasource.DataSourceWithConfigure).Configure(ctx, datasource.ConfigureRequest{ProviderData: c}, &configureResp)
 	var schemaResp datasource.SchemaResponse
 	ds.Schema(ctx, datasource.SchemaRequest{}, &schemaResp)
 
@@ -45,7 +51,7 @@ func readProject(t *testing.T, slug string, status int, body string) datasource.
 	for name, typ := range objectType.AttributeTypes {
 		values[name] = tftypes.NewValue(typ, nil)
 	}
-	values["slug"] = tftypes.NewValue(tftypes.String, slug)
+	values[attribute] = tftypes.NewValue(tftypes.String, value)
 	config := tfsdk.Config{Schema: schemaResp.Schema, Raw: tftypes.NewValue(objectType, values)}
 
 	resp := datasource.ReadResponse{State: tfsdk.State{Schema: schemaResp.Schema, Raw: tftypes.NewValue(objectType, nil)}}
