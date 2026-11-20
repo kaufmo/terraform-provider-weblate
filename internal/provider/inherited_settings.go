@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	dsschema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -124,7 +125,8 @@ func inheritedSettingDataSourceAttributes() map[string]dsschema.Attribute {
 	for name, f := range inheritedSettingFields {
 		switch f.kind {
 		case boolField:
-			attributes[name] = dsschema.BoolAttribute{MarkdownDescription: f.description, Computed: true}
+			attributes[name] = dsschema.BoolAttribute{Computed: true, MarkdownDescription: fmt.Sprintf(
+				"Whether `%s` comes from the Workspace instead of the Project.", strings.TrimPrefix(name, "inherit_"))}
 		case int64Field:
 			attributes[name] = dsschema.Int64Attribute{MarkdownDescription: f.description, Computed: true}
 		case stringSetField:
