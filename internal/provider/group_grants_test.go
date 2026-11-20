@@ -354,8 +354,16 @@ func TestGroupUpdateStoresTheGroupAfterAFailedGrant(t *testing.T) {
 
 func planGroup(t *testing.T, prior, config map[string]any) tfsdk.Plan {
 	t.Helper()
+	resp := modifyGroupPlan(prior, config)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("ModifyPlan: %v", resp.Diagnostics)
+	}
+	return resp.Plan
+}
+
+func modifyGroupPlan(prior, config map[string]any) resource.ModifyPlanResponse {
 	r, s := groupResourceWith(nil)
-	// The plan as the framework hands it over: UseStateForUnknown has copied the prior Grants.
+	// The plan as the framework hands it over: UseStateForUnknown has copied the prior Grants and project.
 	plan := withAttributes(prior, config)
 	resp := resource.ModifyPlanResponse{Plan: tfsdk.Plan{Schema: s.Schema, Raw: projectValue(s, plan)}}
 	r.(resource.ResourceWithModifyPlan).ModifyPlan(context.Background(), resource.ModifyPlanRequest{
@@ -363,10 +371,7 @@ func planGroup(t *testing.T, prior, config map[string]any) tfsdk.Plan {
 		Plan:   resp.Plan,
 		State:  tfsdk.State{Schema: s.Schema, Raw: projectValue(s, prior)},
 	}, &resp)
-	if resp.Diagnostics.HasError() {
-		t.Fatalf("ModifyPlan: %v", resp.Diagnostics)
-	}
-	return resp.Plan
+	return resp
 }
 
 func TestGroupPlanLeavesOmittedProjectsUnknownWhenTheSelectionChanges(t *testing.T) {

@@ -229,6 +229,34 @@ func TestGroupUpdateFollowsARenamedProject(t *testing.T) {
 	}
 }
 
+func TestGroupPlanShowsTheRemovalOfProject(t *testing.T) {
+	plan := planGroup(t, priorScopedGroup, map[string]any{"name": "Reviewers"})
+
+	var p types.String
+	plan.GetAttribute(context.Background(), path.Root("project"), &p)
+	if !p.IsNull() {
+		t.Errorf("project = %v, want null", p)
+	}
+}
+
+func TestGroupUpdateFailsOnARemovedProjectWithoutWriting(t *testing.T) {
+	resp, requests := updateGroup(t, func(request) (int, string) { return http.StatusOK, storedScopedGroup },
+		priorScopedGroup,
+		map[string]any{"name": "Translators"},
+		withAttributes(priorScopedGroup, map[string]any{"name": "Translators", "project": nil}))
+
+	errs := resp.Diagnostics.Errors()
+	if len(errs) != 1 || !strings.Contains(errs[0].Detail(), "-replace") {
+		t.Fatalf("diagnostics = %v, want one error that points to -replace", resp.Diagnostics)
+	}
+	if want := path.Root("project"); !errs[0].(diag.DiagnosticWithPath).Path().Equal(want) {
+		t.Errorf("error path = %v, want %v", errs[0], want)
+	}
+	if len(requests) != 0 {
+		t.Errorf("requests = %v, want none", requests)
+	}
+}
+
 func TestGroupDeleteIgnoresAGroupThatIsGone(t *testing.T) {
 	c, requests := fakeWeblate(t, func(request) (int, string) {
 		return http.StatusNotFound, `{"detail": "No Group matches the given query."}`

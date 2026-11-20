@@ -148,10 +148,10 @@ func (r *groupResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				Required:            true,
 			},
 			"project": schema.StringAttribute{
-				MarkdownDescription: "Slug of the Project that the Group is scoped to. Without it, the Group belongs " +
-					"to the whole Weblate instance. Weblate cannot move an existing Group to another Project, so " +
-					"changing `project` fails on apply, unless the Project was only renamed. To move a Group, " +
-					"replace it with `-replace`.",
+				MarkdownDescription: "Slug of the Project that the Group is scoped to. Without it, a new Group " +
+					"belongs to the whole Weblate instance. Weblate cannot move an existing Group to another Project " +
+					"or to the whole instance, so changing or removing `project` fails on apply, unless the Project " +
+					"was only renamed. To move a Group, replace it with `-replace`.",
 				Optional:      true,
 				Computed:      true,
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
@@ -247,6 +247,15 @@ func (r *groupResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	resp.Diagnostics.Append(diags...)
 	id, diags := groupID(ctx, req.State)
 	resp.Diagnostics.Append(diags...)
+	var plannedProject, priorProject types.String
+	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("project"), &plannedProject)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("project"), &priorProject)...)
+	if plannedProject.IsNull() && !priorProject.IsNull() {
+		resp.Diagnostics.AddAttributeError(path.Root("project"), "Cannot move the Group to the whole Weblate instance",
+			fmt.Sprintf("The Group belongs to the Project %s, and Weblate's API cannot change the Project of an "+
+				"existing Group. Set project = %q, or replace the Group with `-replace` to make it instance-wide.",
+				priorProject.ValueString(), priorProject.ValueString()))
+	}
 	if resp.Diagnostics.HasError() {
 		return
 	}

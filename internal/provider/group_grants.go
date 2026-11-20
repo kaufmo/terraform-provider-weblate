@@ -287,6 +287,14 @@ func (r *groupResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanR
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
 		return
 	}
+	var configuredProject, priorProject types.String
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("project"), &configuredProject)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("project"), &priorProject)...)
+	if configuredProject.IsNull() && !priorProject.IsNull() {
+		// UseStateForUnknown planned the prior Project, which would hide the removal. Update rejects the planned
+		// null; an error here would also block `-replace`, because OpenTofu plans with the prior state first.
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("project"), types.StringNull())...)
+	}
 	var planned, prior types.String
 	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("project_selection"), &planned)...)
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("project_selection"), &prior)...)
