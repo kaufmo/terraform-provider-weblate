@@ -13,3 +13,18 @@ resource "weblate_addon" "consistency" {
   project = "docs"
   name    = "weblate.consistency.languages"
 }
+
+# The webhook secret never reaches the state. To send a new secret, change the version.
+resource "weblate_addon" "webhook" {
+  project = "docs"
+  name    = "weblate.webhook.webhook"
+
+  configuration = jsonencode({
+    webhook_url  = "https://hooks.example.com/weblate"
+    event_filter = "all"
+    events       = []
+  })
+
+  secret_configuration_wo         = jsonencode({ secret = var.webhook_secret })
+  secret_configuration_wo_version = 1
+}
