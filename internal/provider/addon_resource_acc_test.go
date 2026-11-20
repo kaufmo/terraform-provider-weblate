@@ -2,8 +2,11 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/compare"
@@ -11,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 
 	"github.com/kaufmo/terraform-provider-weblate/internal/client"
@@ -177,6 +181,100 @@ resource "weblate_addon" %q {
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.CompareValuePairs("weblate_addon.one", tfjsonpath.New("id"),
 						"weblate_addon.two", tfjsonpath.New("id"), compare.ValuesDiffer()),
+				},
+			},
+		},
+	})
+}
+
+// Webhook secrets are base64 strings that decode to 24 to 64 bytes.
+const (
+	webhookSecret      = "whsec_MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+	otherWebhookSecret = "whsec_ZmVkY2JhOTg3NjU0MzIxMGZlZGNiYTk4NzY1NDMyMTA="
+)
+
+// webhookAddon points the webhook to the test git server, which the settings override allows as a private target.
+func webhookAddon(path, secret string, version int) string {
+	return fmt.Sprintf(`
+resource "weblate_addon" "test" {
+  project       = weblate_project.test.slug
+  name          = "weblate.webhook.webhook"
+  configuration = jsonencode({ webhook_url = "http://git.test.example/%s", event_filter = "all", events = [] })
+
+  secret_configuration_wo         = jsonencode({ secret = %q })
+  secret_configuration_wo_version = %d
+}`, path, secret, version)
+}
+
+// checkStoredWebhookSecret checks the secret in the configuration that Weblate stores, which state never has.
+func checkStoredWebhookSecret(t *testing.T, want string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		id, err := strconv.ParseInt(s.RootModule().Resources["weblate_addon.test"].Primary.ID, 10, 64)
+		if err != nil {
+			return err
+		}
+		a, err := testAccClient(t).GetAddon(context.Background(), id)
+		if err != nil {
+			return err
+		}
+		var configuration struct{ Secret string }
+		if err := json.Unmarshal(a.Configuration, &configuration); err != nil {
+			return err
+		}
+		if configuration.Secret != want {
+			return fmt.Errorf("weblate stored the secret %q, want %q", configuration.Secret, want)
+		}
+		return nil
+	}
+}
+
+func TestAccAddonResourceWebhookSecret(t *testing.T) {
+	project := uniqueSlug()
+	withoutSecret := func(path string) knownvalue.Check {
+		return knownvalue.StringExact(`{"event_filter":"all","events":[],"webhook_url":"http://git.test.example/` + path + `"}`)
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccClient(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             checkProjectsDestroyed(t, project),
+		Steps: []resource.TestStep{
+			{
+				Config: addonConfig(project, webhookAddon("hook", webhookSecret, 1)),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectKnownValue("weblate_addon.test", tfjsonpath.New("secret_configuration_wo"),
+						knownvalue.Null()),
+				}},
+				ConfigStateChecks: []statecheck.StateCheck{
+					expectAddon("configuration", withoutSecret("hook")),
+					expectAddon("secret_configuration_wo", knownvalue.Null()),
+				},
+				Check: checkStoredWebhookSecret(t, webhookSecret),
+			},
+			{
+				// A changed secret is sent only with a new version, but every configuration change sends the
+				// configured one.
+				Config:            addonConfig(project, webhookAddon("other", otherWebhookSecret, 1)),
+				ConfigStateChecks: []statecheck.StateCheck{expectAddon("configuration", withoutSecret("other"))},
+				Check:             checkStoredWebhookSecret(t, otherWebhookSecret),
+			},
+			{
+				Config: addonConfig(project, webhookAddon("other", webhookSecret, 2)),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction("weblate_addon.test", plancheck.ResourceActionUpdate),
+				}},
+				Check: checkStoredWebhookSecret(t, webhookSecret),
+			},
+			{
+				ResourceName:            "weblate_addon.test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"secret_configuration_wo_version"},
+				ImportStateCheck: func(states []*terraform.InstanceState) error {
+					if len(states) != 1 || strings.Contains(states[0].Attributes["configuration"], "secret") {
+						return fmt.Errorf("imported %v, want a configuration without the secret", states)
+					}
+					return nil
 				},
 			},
 		},
