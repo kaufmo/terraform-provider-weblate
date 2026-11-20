@@ -240,7 +240,7 @@ func (r *categoryResource) Delete(ctx context.Context, req resource.DeleteReques
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	timeout, diags := state.Timeouts.Delete(ctx, defaultDeleteTimeout)
+	timeout, diags := state.Timeouts.Delete(ctx, defaultTimeout)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return

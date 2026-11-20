@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -47,6 +48,11 @@ func fieldsToWrite(ctx context.Context, config tfsdk.Config, plan tfsdk.Plan, pr
 
 func jsonValue(ctx context.Context, p path.Path, v attr.Value) (any, diag.Diagnostics) {
 	switch v := v.(type) {
+	case jsontypes.Normalized:
+		// Weblate's JSON fields store a string as a string, so the object has to be sent decoded.
+		var decoded any
+		diags := v.Unmarshal(&decoded)
+		return decoded, diags
 	case basetypes.StringValuable:
 		s, diags := v.ToStringValue(ctx)
 		return s.ValueString(), diags

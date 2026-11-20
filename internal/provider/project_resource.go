@@ -21,7 +21,7 @@ import (
 	"github.com/kaufmo/terraform-provider-weblate/internal/client"
 )
 
-const defaultDeleteTimeout = 20 * time.Minute
+const defaultTimeout = 20 * time.Minute
 
 var (
 	_ resource.ResourceWithConfigure   = &projectResource{}
@@ -278,7 +278,7 @@ func (r *projectResource) Delete(ctx context.Context, req resource.DeleteRequest
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	timeout, diags := state.Timeouts.Delete(ctx, defaultDeleteTimeout)
+	timeout, diags := state.Timeouts.Delete(ctx, defaultTimeout)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
