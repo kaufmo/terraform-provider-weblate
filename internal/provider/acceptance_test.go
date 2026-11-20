@@ -41,6 +41,35 @@ func init() {
 			return sweepProjects(context.Background(), c)
 		},
 	})
+	resource.AddTestSweepers("weblate_group", &resource.Sweeper{
+		Name: "weblate_group",
+		F: func(string) error {
+			c, err := client.New(os.Getenv("WEBLATE_URL"), os.Getenv("WEBLATE_API_TOKEN"))
+			if err != nil {
+				return err
+			}
+			return sweepGroups(context.Background(), c)
+		},
+	})
+}
+
+// sweepGroups deletes the instance-wide test Groups; the Project sweeper removes the Project-scoped ones with their
+// Project.
+func sweepGroups(ctx context.Context, c *client.Client) error {
+	groups, err := client.List[client.Group](ctx, c, "groups/")
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, g := range groups {
+		if g.DefiningProject != nil || !strings.HasPrefix(g.Name, testAccPrefix) {
+			continue
+		}
+		if err := c.DeleteGroup(ctx, g.ID); err != nil && !client.IsNotFound(err) {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func sweepProjects(ctx context.Context, c *client.Client) error {

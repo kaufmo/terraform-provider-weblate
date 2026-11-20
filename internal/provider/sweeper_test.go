@@ -39,3 +39,29 @@ func TestSweepProjectsDeletesOnlyTestProjects(t *testing.T) {
 		t.Errorf("deleted %v, want %v", deleted, want)
 	}
 }
+
+func TestSweepGroupsDeletesOnlyInstanceWideTestGroups(t *testing.T) {
+	var deleted []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodDelete {
+			deleted = append(deleted, r.URL.Path)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		_, _ = w.Write([]byte(`{"next": null, "results": [{"id": 1, "name": "Users"}, {"id": 2, "name": "tf-acc-1"},
+			{"id": 3, "name": "tf-acc-2", "defining_project": "http://localhost/api/projects/tf-acc-2/"}]}`))
+	}))
+	defer srv.Close()
+	c, err := client.New(srv.URL, "wlu_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := sweepGroups(context.Background(), c); err != nil {
+		t.Fatalf("sweepGroups: %v", err)
+	}
+	if want := []string{"/api/groups/2/"}; !slices.Equal(deleted, want) {
+		t.Errorf("deleted %v, want %v", deleted, want)
+	}
+}
