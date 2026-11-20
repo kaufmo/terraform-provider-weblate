@@ -4,7 +4,7 @@
 
 ### Issue tracker
 
-Issues live in GitHub Issues of `kaufmo/opentofu-provider-weblate`, accessed through the `github` MCP server. See `docs/agents/issue-tracker.md`.
+Issues live in GitHub Issues of `kaufmo/terraform-provider-weblate`, accessed through the `github` MCP server. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

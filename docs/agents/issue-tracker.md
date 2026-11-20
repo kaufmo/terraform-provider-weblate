@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and specs for this repo live as GitHub issues in `kaufmo/opentofu-provider-weblate`. Use the tools of the `github` MCP server configured in `.mcp.json` for all operations, not the `gh` CLI. Pass `owner: kaufmo` and `repo: opentofu-provider-weblate` on every call.
+Issues and specs for this repo live as GitHub issues in `kaufmo/terraform-provider-weblate`. Use the tools of the `github` MCP server configured in `.mcp.json` for all operations, not the `gh` CLI. Pass `owner: kaufmo` and `repo: terraform-provider-weblate` on every call.
 
 ## Conventions
 
