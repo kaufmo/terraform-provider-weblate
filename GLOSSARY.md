@@ -28,6 +28,10 @@ A folder inside a Project that groups Components; Categories can nest.
 One translatable resource inside a Project, backed by one VCS repository and one file format.
 _Avoid_: resource (clashes with the OpenTofu term)
 
+**Slug path**:
+The slugs from the Project down to a Category or Component, joined by `/`, such as `docs/guides/api`. Changes when any of these objects is renamed or moved.
+_Avoid_: full slug, path
+
 **Translation**:
 One Language of one Component.
 
