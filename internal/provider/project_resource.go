@@ -33,7 +33,7 @@ var (
 )
 
 type projectResource struct {
-	client *client.Client
+	resourceClient
 }
 
 type projectResourceModel struct {
@@ -184,13 +184,6 @@ func (r *projectResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 		"autoclean_tm":            boolean("Whether Weblate removes outdated entries from the Project's translation memory."),
 		"enforced_2fa":            boolean("Whether contributors need two-factor authentication."),
 	})
-}
-
-func (r *projectResource) Configure(_ context.Context, req resource.ConfigureRequest, _ *resource.ConfigureResponse) {
-	// ProviderData is nil until the provider is configured.
-	if c, ok := req.ProviderData.(*client.Client); ok {
-		r.client = c
-	}
 }
 
 func (r *projectResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {

@@ -37,7 +37,7 @@ var selections = map[string]map[string]int64{
 }
 
 type groupResource struct {
-	client *client.Client
+	resourceClient
 }
 
 type groupResourceModel struct {
@@ -181,13 +181,6 @@ func (r *groupResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 			"components": grants("Slug paths of the Components that the Group grants, such as `docs/guides/api`. " +
 				"On a Group with `project`, only Components of that Project."),
 		},
-	}
-}
-
-func (r *groupResource) Configure(_ context.Context, req resource.ConfigureRequest, _ *resource.ConfigureResponse) {
-	// ProviderData is nil until the provider is configured.
-	if c, ok := req.ProviderData.(*client.Client); ok {
-		r.client = c
 	}
 }
 

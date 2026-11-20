@@ -109,3 +109,25 @@ func (p *weblateProvider) Resources(context.Context) []func() resource.Resource 
 func (p *weblateProvider) DataSources(context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{NewProjectDataSource, NewRoleDataSource}
 }
+
+// resourceClient and dataSourceClient give every resource and data source the client from the provider's Configure.
+// ProviderData is nil until the provider is configured.
+type resourceClient struct {
+	client *client.Client
+}
+
+func (r *resourceClient) Configure(_ context.Context, req resource.ConfigureRequest, _ *resource.ConfigureResponse) {
+	if c, ok := req.ProviderData.(*client.Client); ok {
+		r.client = c
+	}
+}
+
+type dataSourceClient struct {
+	client *client.Client
+}
+
+func (d *dataSourceClient) Configure(_ context.Context, req datasource.ConfigureRequest, _ *datasource.ConfigureResponse) {
+	if c, ok := req.ProviderData.(*client.Client); ok {
+		d.client = c
+	}
+}

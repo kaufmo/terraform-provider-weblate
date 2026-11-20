@@ -16,7 +16,7 @@ import (
 var _ datasource.DataSourceWithConfigure = &projectDataSource{}
 
 type projectDataSource struct {
-	client *client.Client
+	dataSourceClient
 }
 
 type projectDataSourceModel struct {
@@ -99,13 +99,6 @@ func (d *projectDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 		"autoclean_tm":            boolean("Whether Weblate removes outdated entries from the Project's translation memory."),
 		"enforced_2fa":            boolean("Whether contributors need two-factor authentication."),
 	})
-}
-
-func (d *projectDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, _ *datasource.ConfigureResponse) {
-	// ProviderData is nil until the provider is configured.
-	if c, ok := req.ProviderData.(*client.Client); ok {
-		d.client = c
-	}
 }
 
 func (d *projectDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {

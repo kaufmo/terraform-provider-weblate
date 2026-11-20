@@ -254,7 +254,7 @@ func cleanupPath(p string) string {
 }
 
 type componentResource struct {
-	client *client.Client
+	resourceClient
 }
 
 func NewComponentResource() resource.Resource {
@@ -367,12 +367,6 @@ func (r *componentResource) Schema(ctx context.Context, _ resource.SchemaRequest
 					"`30m`. Defaults to `20m`. When the time is up, the deletion goes on in Weblate.",
 			}),
 		},
-	}
-}
-
-func (r *componentResource) Configure(_ context.Context, req resource.ConfigureRequest, _ *resource.ConfigureResponse) {
-	if c, ok := req.ProviderData.(*client.Client); ok {
-		r.client = c
 	}
 }
 

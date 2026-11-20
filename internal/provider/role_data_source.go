@@ -8,14 +8,12 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-
-	"github.com/kaufmo/terraform-provider-weblate/internal/client"
 )
 
 var _ datasource.DataSourceWithConfigure = &roleDataSource{}
 
 type roleDataSource struct {
-	client *client.Client
+	dataSourceClient
 }
 
 type roleDataSourceModel struct {
@@ -50,13 +48,6 @@ func (d *roleDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, r
 				Computed:            true,
 			},
 		},
-	}
-}
-
-func (d *roleDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, _ *datasource.ConfigureResponse) {
-	// ProviderData is nil until the provider is configured.
-	if c, ok := req.ProviderData.(*client.Client); ok {
-		d.client = c
 	}
 }
 

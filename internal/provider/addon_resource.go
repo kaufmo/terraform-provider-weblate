@@ -29,7 +29,7 @@ var (
 )
 
 type addonResource struct {
-	client *client.Client
+	resourceClient
 }
 
 type addonResourceModel struct {
@@ -201,12 +201,6 @@ func (r *addonResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				Optional: true,
 			},
 		},
-	}
-}
-
-func (r *addonResource) Configure(_ context.Context, req resource.ConfigureRequest, _ *resource.ConfigureResponse) {
-	if c, ok := req.ProviderData.(*client.Client); ok {
-		r.client = c
 	}
 }
 

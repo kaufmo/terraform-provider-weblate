@@ -27,7 +27,7 @@ var (
 )
 
 type categoryResource struct {
-	client *client.Client
+	resourceClient
 }
 
 type categoryResourceModel struct {
@@ -116,12 +116,6 @@ func (r *categoryResource) Schema(ctx context.Context, _ resource.SchemaRequest,
 			Required:   true,
 		},
 	})
-}
-
-func (r *categoryResource) Configure(_ context.Context, req resource.ConfigureRequest, _ *resource.ConfigureResponse) {
-	if c, ok := req.ProviderData.(*client.Client); ok {
-		r.client = c
-	}
 }
 
 func (r *categoryResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
