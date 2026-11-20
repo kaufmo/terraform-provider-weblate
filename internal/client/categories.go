@@ -35,12 +35,6 @@ func CategoryRef(id int64) string {
 	return fmt.Sprintf("categories/%d/", id)
 }
 
-// ProjectURL returns the absolute API URL of the Project with the given slug, the form in which Weblate's serializers
-// take a reference to a Project.
-func (c *Client) ProjectURL(slug string) string {
-	return c.apiURL.ResolveReference(&url.URL{Path: ProjectRef(slug)}).String()
-}
-
 // GetCategory reads the Category with the given numeric ID.
 func (c *Client) GetCategory(ctx context.Context, id int64) (*Category, error) {
 	return c.categoryRequest(ctx, http.MethodGet, CategoryRef(id), nil)
