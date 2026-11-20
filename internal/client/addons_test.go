@@ -73,7 +73,7 @@ func TestFindAddonMatchesNameAndOwner(t *testing.T) {
 
 func TestComponentSlugPathFromURL(t *testing.T) {
 	for u, want := range map[string]string{
-		siteDomain + "/api/components/docs/app/":                       "docs/app",
+		siteDomain + "/api/components/docs/app/":                            "docs/app",
 		siteDomain + "/weblate/api/components/docs/guides%252Fapi%252Fapp/": "docs/guides/api/app",
 	} {
 		got, err := ComponentSlugPathFromURL(u)

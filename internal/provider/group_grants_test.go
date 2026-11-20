@@ -191,8 +191,8 @@ func TestGroupCreateRecordsWhetherRolesAreConfigured(t *testing.T) {
 
 func TestGroupValidateConfigAcceptsMatchingGrants(t *testing.T) {
 	for name, config := range map[string]map[string]any{
-		"projects with project_selection omitted": {"name": "G", "projects": stringSet("docs")},
-		"projects with manual":                    {"name": "G", "project_selection": "manual", "projects": stringSet()},
+		"projects with project_selection omitted":        {"name": "G", "projects": stringSet("docs")},
+		"projects with manual":                           {"name": "G", "project_selection": "manual", "projects": stringSet()},
 		"component_lists with project_selection omitted": {"name": "G", "component_lists": stringSet("core")},
 		"component_lists with component_list": {"name": "G", "project_selection": "component_list",
 			"component_lists": stringSet("core")},
