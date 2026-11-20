@@ -447,3 +447,17 @@ func TestGroupPlanKeepsOmittedProjectsWithTheSameSelection(t *testing.T) {
 		t.Errorf("projects = %v, want the prior [docs]", v)
 	}
 }
+
+func TestGroupPlanLeavesOmittedProjectsUnknownWhenTheScopeProjectIsRenamed(t *testing.T) {
+	prior := map[string]any{"id": "12", "name": "G", "project": "docs", "project_selection": "manual",
+		"projects": stringSet("docs"), "component_lists": stringSet()}
+	plan := planGroup(t, prior, map[string]any{"name": "G", "project": "docs-renamed"})
+
+	for attribute, wantUnknown := range map[string]bool{"projects": true, "component_lists": false} {
+		var v types.Set
+		plan.GetAttribute(context.Background(), path.Root(attribute), &v)
+		if v.IsUnknown() != wantUnknown {
+			t.Errorf("%s = %v, want unknown %v", attribute, v, wantUnknown)
+		}
+	}
+}

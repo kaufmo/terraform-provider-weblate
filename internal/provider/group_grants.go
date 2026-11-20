@@ -310,16 +310,23 @@ func (r *groupResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanR
 		// null; an error here would also block `-replace`, because OpenTofu plans with the prior state first.
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("project"), types.StringNull())...)
 	}
-	var planned, prior types.String
+	var plannedProject, planned, prior types.String
+	resp.Diagnostics.Append(resp.Plan.GetAttribute(ctx, path.Root("project"), &plannedProject)...)
 	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("project_selection"), &planned)...)
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("project_selection"), &prior)...)
-	if resp.Diagnostics.HasError() || planned.Equal(prior) {
+	if resp.Diagnostics.HasError() {
 		return
 	}
-	for _, attribute := range []string{"projects", "component_lists"} {
+	selectionChanged := !planned.Equal(prior)
+	// A scoped Group always grants its own Project, so a rename of that Project changes projects too.
+	changed := map[string]bool{
+		"projects":        selectionChanged || !plannedProject.Equal(priorProject),
+		"component_lists": selectionChanged,
+	}
+	for attribute, unknown := range changed {
 		var configured types.Set
 		resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root(attribute), &configured)...)
-		if configured.IsNull() {
+		if unknown && configured.IsNull() {
 			resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root(attribute), types.SetUnknown(types.StringType))...)
 		}
 	}
