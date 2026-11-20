@@ -33,7 +33,7 @@ jobs:
         with:
           go-version-file: go.mod
       # tfplugindocs reads the provider schema through the Terraform CLI.
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_wrapper: false
       - name: Generate and validate docs

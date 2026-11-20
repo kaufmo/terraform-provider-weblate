@@ -44,7 +44,7 @@ jobs:
             echo "TF_ACC_PROVIDER_HOST=registry.opentofu.org"
           } >> "$GITHUB_ENV"
       - if: matrix.client == 'terraform'
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ matrix.client-version }}
           terraform_wrapper: false
