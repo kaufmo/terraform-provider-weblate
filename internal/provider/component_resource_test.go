@@ -651,6 +651,68 @@ func TestComponentCreateOfALinkedComponentPassesTheReadBack(t *testing.T) {
 	}
 }
 
+// storedWithoutVCSView is storedReference as Weblate returns it to a token without the permission vcs.view.
+const storedWithoutVCSView = `{"id": 12, "slug": "reference", "name": "Reference",
+	"project": {"id": 7, "slug": "docs", "url": "http://weblate.example/api/projects/docs/"},
+	"category": "http://weblate.example/api/categories/9/", "source_language": {"code": "en", "name": "English"},
+	"vcs": null, "vcs_params": null, "repo": null, "branch": null, "push_branch": null, "push": null,
+	"filemask": null, "screenshot_filemask": null, "git_export": null, "repoweb": null, "repoweb_translations": null,
+	"linked_component": null, "file_format": "po", "file_format_params": {"po_line_wrap": 77}, "priority": 100,
+	"url": "http://weblate.example/api/components/docs/guides%252Fapi%252Freference/", "task_url": null}`
+
+func TestComponentReadWithoutVCSViewKeepsTheHiddenFields(t *testing.T) {
+	state := withAttributes(referenceState, map[string]any{"vcs": "git", "vcs_params": `{}`, "git_export": "",
+		"linked_component": "docs/other"})
+	resp := readComponentResource(t, referenceTree(storedWithoutVCSView), state)
+
+	for name, want := range map[string]string{"repo": "http://git.example/demo.git", "branch": "main",
+		"filemask": "po/*.po", "vcs": "git", "vcs_params": "{}", "git_export": "", "linked_component": "docs/other"} {
+		var got attr.Value
+		resp.Diagnostics.Append(resp.State.GetAttribute(context.Background(), path.Root(name), &got)...)
+		if got.String() != strconv.Quote(want) {
+			t.Errorf("%s = %v, want %q from state", name, got, want)
+		}
+	}
+	if push := stateAttribute[trimmedString](t, resp.State, "push"); !push.IsNull() {
+		t.Errorf("push = %v, want null as in state", push)
+	}
+	if p := stateAttribute[types.Int64](t, resp.State, "priority"); p.ValueInt64() != 100 {
+		t.Errorf("priority = %v, want 100 from Weblate", p)
+	}
+	warnings := resp.Diagnostics.Warnings()
+	if len(warnings) != 1 || !strings.Contains(warnings[0].Detail(), "vcs.view") {
+		t.Errorf("diagnostics = %v, want one warning that names vcs.view", resp.Diagnostics)
+	}
+}
+
+func TestComponentCreateWithoutVCSViewPassesTheReadBack(t *testing.T) {
+	tree := referenceTree(storedWithoutVCSView)
+	c, _ := fakeWeblate(t, func(r request) (int, string) {
+		if r.method == http.MethodPost {
+			return http.StatusCreated, storedWithoutVCSView
+		}
+		return tree(r)
+	})
+	r, s := componentResourceWith(c)
+	resp := resource.CreateResponse{State: tfsdk.State{Schema: s.Schema,
+		Raw: tftypes.NewValue(s.Schema.Type().TerraformType(context.Background()), nil)}}
+	r.Create(context.Background(), resource.CreateRequest{
+		Config: tfsdk.Config{Schema: s.Schema, Raw: projectValue(s, referenceConfig)},
+		Plan: tfsdk.Plan{Schema: s.Schema, Raw: projectValue(s, withAttributes(referenceConfig,
+			map[string]any{"branch": tftypes.UnknownValue, "git_export": tftypes.UnknownValue}))},
+	}, &resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Create: %v", resp.Diagnostics)
+	}
+	if repo := stateAttribute[trimmedString](t, resp.State, "repo"); repo.ValueString() != "http://git.example/demo.git" {
+		t.Errorf("repo = %v, want the planned value", repo)
+	}
+	// Planned as unknown, which state cannot hold after an apply.
+	if b := stateAttribute[trimmedString](t, resp.State, "branch"); !b.IsNull() {
+		t.Errorf("branch = %v, want null", b)
+	}
+}
+
 func TestComponentReadOfAnUnlinkedComponentHasNoLinkedComponent(t *testing.T) {
 	resp := readComponentResource(t, referenceTree(storedReference), referenceState)
 	if l := stateAttribute[types.String](t, resp.State, "linked_component"); !l.IsNull() {

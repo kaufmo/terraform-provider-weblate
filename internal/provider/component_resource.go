@@ -462,6 +462,11 @@ const repoLinkPrefix = "weblate://"
 var linkedRepositorySettings = []string{"push", "branch", "push_branch", "vcs_params", "push_on_commit",
 	"push_on_update", "commit_pending_age", "auto_lock_error"}
 
+// hiddenWithoutVCSView are the attributes that Weblate returns as null to a user without the permission vcs.view on
+// the Component.
+var hiddenWithoutVCSView = []string{"vcs", "vcs_params", "repo", "branch", "filemask", "screenshot_filemask", "push",
+	"git_export", "push_branch", "repoweb", "repoweb_translations", "linked_component"}
+
 // ValidateConfig rejects repository settings of a Linked Component and credentials that the provider cannot add to
 // the repository URLs.
 func (r *componentResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
@@ -659,6 +664,23 @@ func (r *componentResource) store(ctx context.Context, comp *client.Component, t
 			repo = trimmedStringValue(repoLinkPrefix + linked)
 		}
 		values["repo"] = repo
+	}
+	// vcs has a value in every Component, so null means that Weblate hid the repository settings.
+	if string(comp.Fields["vcs"]) == "null" {
+		for _, name := range hiddenWithoutVCSView {
+			var v attr.Value
+			diags.Append(prior.GetAttribute(ctx, path.Root(name), &v)...)
+			// An unknown planned value stays null, the typed null from Weblate's response.
+			if v != nil && !v.IsUnknown() {
+				values[name] = v
+			}
+		}
+		diags.AddWarning("Repository settings hidden by Weblate",
+			fmt.Sprintf("Weblate returns null for %s of the Component %s, because the API token lacks the "+
+				"permission vcs.view. The provider keeps their values from state, cannot detect changes made "+
+				"outside OpenTofu, and skips them when it compares the configuration with what Weblate stored. "+
+				"After an import, they stay null. Use a token whose user has a Role with vcs.view on the "+
+				"Component, such as Power user or Administration.", strings.Join(hiddenWithoutVCSView, ", "), slugPath))
 	}
 	for name, v := range values {
 		diags.Append(state.SetAttribute(ctx, path.Root(name), v)...)
