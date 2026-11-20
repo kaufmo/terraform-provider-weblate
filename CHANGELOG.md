@@ -13,3 +13,4 @@ FEATURES:
 * **New Resource:** `weblate_category`, imported by slug path, such as `docs/guides`. Renames and moves happen in place, and delete waits until Weblate has removed the Category.
 * **New Resource:** `weblate_component` with its own repository, imported by slug path, such as `docs/guides/app`. Renames and moves happen in place, create and update wait for Weblate's background task, and delete waits until Weblate has removed the Component. The credentials of `repo` and `push` are write-only attributes, `repo_password_wo` and `push_password_wo`, which never reach plan or state.
 * **New Resource:** `weblate_group` without Grants, imported by numeric ID. A Group belongs to the whole instance or, with `project`, to one Project.
+* **New Resource:** `weblate_addon` on a Component or a Project, imported by numeric ID. `configuration` is a JSON string, and create takes over an Add-on that Weblate has already installed.
