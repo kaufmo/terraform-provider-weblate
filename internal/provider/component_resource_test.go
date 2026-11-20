@@ -514,6 +514,27 @@ func TestComponentUpdateSendsRepoOnlyWhenItOrItsCredentialsChange(t *testing.T) 
 	}
 }
 
+func TestComponentUpdateKeepsThePriorStateWhenThePatchFails(t *testing.T) {
+	prior := withAttributes(referenceState, map[string]any{"repo_username": "x-access-token",
+		"repo_password_wo_version": int64(1)})
+	tree := referenceTree(storedReference)
+	resp, _ := updateComponent(t, func(r request) (int, string) {
+		if r.method == http.MethodPatch {
+			return http.StatusBadRequest, `{"type": "validation_error", "errors": [{"code": "invalid",
+				"detail": "Authentication failed.", "attr": "repo"}]}`
+		}
+		return tree(r)
+	}, prior, withAttributes(credentialsConfig, map[string]any{"repo_password_wo_version": int64(2)}))
+
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("Update succeeded, want the error of the PATCH")
+	}
+	// With the bumped version in state, a retry after fixing the password would not send repo again.
+	if v := stateAttribute[types.Int64](t, resp.State, "repo_password_wo_version"); v.ValueInt64() != 1 {
+		t.Errorf("repo_password_wo_version = %v, want the prior 1", v)
+	}
+}
+
 func TestComponentReadRemovesCredentialsFromTheURLs(t *testing.T) {
 	// An instance with HIDE_REPO_CREDENTIALS = False returns the URLs as stored.
 	stored := strings.Replace(storedReference, `"repo": "http://git.example/demo.git"`,

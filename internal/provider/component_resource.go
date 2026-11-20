@@ -763,6 +763,9 @@ func (r *componentResource) Read(ctx context.Context, req resource.ReadRequest, 
 }
 
 func (r *componentResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	// The framework stores the plan when Update fails. Until Weblate has the write, state keeps the prior values, so
+	// that a bumped *_password_wo_version still differs on the retry and the URL with the credentials goes out again.
+	resp.State.Raw = req.State.Raw
 	fields, diags := fieldsToWrite(ctx, req.Config, req.Plan, &req.State)
 	resp.Diagnostics.Append(diags...)
 	resp.Diagnostics.Append(sendCredentials(ctx, req.Config, req.Plan, &req.State, fields)...)
@@ -832,6 +835,7 @@ func (r *componentResource) Update(ctx context.Context, req resource.UpdateReque
 	}
 	timeout, diags := t.Update(ctx, defaultTimeout)
 	resp.Diagnostics.Append(diags...)
+	resp.State.Raw = req.Plan.Raw
 	r.finishWrite(ctx, req.Config, req.Plan, comp, t, timeout, &resp.State, &resp.Diagnostics)
 }
 
