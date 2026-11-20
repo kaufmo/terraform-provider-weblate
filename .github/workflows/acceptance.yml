@@ -1,0 +1,62 @@
+name: Acceptance tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: ${{ matrix.client }} ${{ matrix.client-version }}, Weblate ${{ matrix.weblate }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The minimum Weblate version stays here, out of Dependabot's reach. An empty image means the latest
+          # release that test/weblate/Dockerfile pins.
+          - { client: opentofu, client-version: latest, weblate: minimum, image: "weblate/weblate:2026.10.1.4" }
+          - { client: opentofu, client-version: latest, weblate: latest, image: "" }
+          - { client: opentofu, client-version: 1.11.x, weblate: latest, image: "" }
+          - { client: terraform, client-version: 1.11.x, weblate: latest, image: "" }
+          - { client: terraform, client-version: latest, weblate: latest, image: "" }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - if: matrix.client == 'opentofu'
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: ${{ matrix.client-version }}
+          tofu_wrapper: false
+      - if: matrix.client == 'opentofu'
+        name: Let terraform-plugin-testing run OpenTofu
+        run: |
+          {
+            echo "TF_ACC_TERRAFORM_PATH=$(command -v tofu)"
+            echo "TF_ACC_PROVIDER_NAMESPACE=hashicorp"
+            echo "TF_ACC_PROVIDER_HOST=registry.opentofu.org"
+          } >> "$GITHUB_ENV"
+      - if: matrix.client == 'terraform'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ matrix.client-version }}
+          terraform_wrapper: false
+
+      - name: Start Weblate
+        run: test/weblate/start.sh >> "$GITHUB_ENV"
+        env:
+          WEBLATE_IMAGE: ${{ matrix.image }}
+      - name: Run the acceptance tests
+        run: go test ./... -run '^TestAcc' -v -timeout 25m
+        env:
+          TF_ACC: "1"
+      - name: Show the Weblate and git server logs
+        if: failure()
+        run: docker compose -f test/weblate/compose.yaml logs --tail 1000 weblate gitserver

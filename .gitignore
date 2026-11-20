@@ -45,3 +45,6 @@ terraform.rc
 
 # Local MCP config, contains a GitHub token
 .mcp.json
+
+# GoReleaser output
+dist/

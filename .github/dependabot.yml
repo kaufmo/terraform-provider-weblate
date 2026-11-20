@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  # Bumps the latest Weblate release in test/weblate/Dockerfile; the minimum stays pinned in the acceptance workflow.
+  - package-ecosystem: docker
+    directory: /test/weblate
+    schedule:
+      interval: weekly
