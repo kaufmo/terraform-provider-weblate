@@ -31,7 +31,7 @@ jobs:
           go-version-file: go.mod
 
       - if: matrix.client == 'opentofu'
-        uses: opentofu/setup-opentofu@v1
+        uses: opentofu/setup-opentofu@v2
         with:
           tofu_version: ${{ matrix.client-version }}
           tofu_wrapper: false
