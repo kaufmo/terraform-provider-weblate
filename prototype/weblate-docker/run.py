@@ -22,7 +22,7 @@ TOKEN = "wlu_prototypeacceptancetesttoken0001"
 BASE = f"http://127.0.0.1:{os.environ.get('WEBLATE_PORT', '8080')}"
 RUNS = int(os.environ.get("RUNS", "3"))
 IMAGES = sys.argv[1:] or ["weblate/weblate:2026.8.1.0", "weblate/weblate:2026.11.2.0"]
-REPO = "http://gitserver/demo.git"
+REPO = "http://git.proto.test/demo.git"
 
 
 def compose(*args, check=True):
@@ -202,24 +202,35 @@ def probe_nulls():
     return out
 
 
+def object_id(obj):
+    if "id" in obj:
+        return obj["id"]
+    return int(obj["url"].rstrip("/").rsplit("/", 1)[-1])
+
+
 def probe_groups():
     out = {}
     status, clist = api("POST", "/api/component-lists/", {"name": "Proto list", "slug": "proto-list"})
     out["create_component_list"] = status if status == 201 else {"status": status, "body": clist}
     status, group = api("POST", "/api/groups/", {"name": "Proto team"})
-    out["create_group"] = status if status == 201 else {"status": status, "body": group}
+    out["create_group"] = {"status": status, "body": group}
     if status != 201:
         return out
-    gid = group["id"]
+    gid = object_id(group)
     _, roles = api("GET", "/api/roles/")
     _, project = api("GET", "/api/projects/proto/")
     _, component = api("GET", "/api/components/proto/demo/")
+    out["id_fields"] = {
+        name: "id" in obj
+        for name, obj in (("group", group), ("role", roles["results"][0]), ("project", project),
+                          ("component", component), ("component_list", clist))
+    }
     for path, body in (
-        ("roles", {"role_id": roles["results"][0]["id"]}),
-        ("projects", {"project_id": project["id"]}),
+        ("roles", {"role_id": object_id(roles["results"][0])}),
+        ("projects", {"project_id": object_id(project)}),
         ("languages", {"language_code": "de"}),
-        ("components", {"component_id": component["id"]}),
-        ("componentlists", {"component_list_id": clist.get("id") if isinstance(clist, dict) else None}),
+        ("components", {"component_id": object_id(component)}),
+        ("componentlists", {"component_list_id": object_id(clist)}),
     ):
         status, resp = api("POST", f"/api/groups/{gid}/{path}/", body)
         out[f"POST {path} {list(body)[0]}"] = status if status < 300 else {"status": status, "body": resp}

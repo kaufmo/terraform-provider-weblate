@@ -25,6 +25,10 @@ services:
     image: nginx:alpine
     volumes:
       - git:/usr/share/nginx/html:ro
+    networks:
+      default:
+        # Django's URLValidator rejects hostnames without a TLD.
+        aliases: [git.proto.test]
     depends_on:
       gitinit:
         condition: service_completed_successfully
