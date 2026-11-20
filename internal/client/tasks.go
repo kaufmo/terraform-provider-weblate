@@ -3,13 +3,12 @@ package client
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"time"
 )
 
-const deletionPollInterval = 2 * time.Second
+const pollInterval = 2 * time.Second
 
 // Task is a background task of Weblate, read from /api/tasks/{id}/.
 type Task struct {
@@ -41,7 +40,7 @@ func (c *Client) WaitForDeletion(ctx context.Context, objectRef, taskRef string)
 			return nil
 		}
 		if ctx.Err() != nil {
-			return deletionTimeout(progress)
+			return waitTimeout("the deletion", progress)
 		}
 		if err != nil {
 			return err
@@ -54,7 +53,7 @@ func (c *Client) WaitForDeletion(ctx context.Context, objectRef, taskRef string)
 				// Weblate keeps task metadata in a cache that can expire; the object's 404 remains the signal.
 				taskRef = ""
 			case ctx.Err() != nil:
-				return deletionTimeout(progress)
+				return waitTimeout("the deletion", progress)
 			case err != nil:
 				return err
 			case task.Failure() != "":
@@ -63,16 +62,44 @@ func (c *Client) WaitForDeletion(ctx context.Context, objectRef, taskRef string)
 				progress = task.Progress
 			}
 		}
-		if err := c.sleep(ctx, deletionPollInterval); err != nil {
-			return deletionTimeout(progress)
+		if err := c.sleep(ctx, pollInterval); err != nil {
+			return waitTimeout("the deletion", progress)
 		}
 	}
 }
 
-func deletionTimeout(progress int) error {
-	if progress < 0 {
-		return errors.New("timed out waiting for Weblate to finish the deletion; it continues in the background")
+// WaitForTask polls the task at taskRef until it has completed. A failed task ends the wait with an error that holds
+// the exception message and the task log. When ctx ends first, the error names the task's progress; the task keeps
+// running.
+func (c *Client) WaitForTask(ctx context.Context, taskRef string) error {
+	progress := -1
+	for {
+		var task Task
+		err := c.Do(ctx, http.MethodGet, taskRef, nil, &task)
+		switch {
+		case IsNotFound(err):
+			// Weblate keeps task metadata in a cache that can expire, so a missing task has nothing left to wait for.
+			return nil
+		case ctx.Err() != nil:
+			return waitTimeout("the background task", progress)
+		case err != nil:
+			return err
+		case task.Failure() != "":
+			return fmt.Errorf("the background task failed: %s\n\nTask log:\n%s", task.Failure(), task.Log)
+		case task.Completed:
+			return nil
+		}
+		progress = task.Progress
+		if err := c.sleep(ctx, pollInterval); err != nil {
+			return waitTimeout("the background task", progress)
+		}
 	}
-	return fmt.Errorf("timed out waiting for Weblate to finish the deletion; the task is at %d%% and continues "+
-		"in the background", progress)
+}
+
+func waitTimeout(what string, progress int) error {
+	if progress < 0 {
+		return fmt.Errorf("timed out waiting for Weblate to finish %s; it continues in the background", what)
+	}
+	return fmt.Errorf("timed out waiting for Weblate to finish %s; the task is at %d%% and continues in the "+
+		"background", what, progress)
 }
