@@ -169,5 +169,31 @@ func (c *Client) resolve(ref string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if u.IsAbs() {
+		// Weblate builds absolute URLs from its site domain, which can differ from the URL the provider was given.
+		u.Scheme, u.Host, u.User = c.apiURL.Scheme, c.apiURL.Host, nil
+		return u.String(), nil
+	}
 	return c.apiURL.ResolveReference(u).String(), nil
+}
+
+type page[T any] struct {
+	Next    string `json:"next"`
+	Results []T    `json:"results"`
+}
+
+// List fetches every page of the list endpoint at ref.
+func List[T any](ctx context.Context, c *Client, ref string) ([]T, error) {
+	var all []T
+	for {
+		var p page[T]
+		if err := c.Do(ctx, http.MethodGet, ref, nil, &p); err != nil {
+			return nil, err
+		}
+		all = append(all, p.Results...)
+		if p.Next == "" {
+			return all, nil
+		}
+		ref = p.Next
+	}
 }
