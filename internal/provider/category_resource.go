@@ -39,15 +39,12 @@ type categoryResourceModel struct {
 }
 
 func newCategoryResourceModel(c *client.Category, slugPath string, t timeouts.Value) categoryResourceModel {
-	parent := types.StringNull()
-	if c.Category != nil {
-		parent = types.StringValue(slugPath[:strings.LastIndex(slugPath, "/")])
-	}
+	project, _, _ := strings.Cut(slugPath, "/")
 	return categoryResourceModel{
 		ID:        types.StringValue(slugPath),
 		WeblateID: types.Int64Value(c.ID),
-		Project:   types.StringValue(c.ProjectSlug()),
-		Category:  parent,
+		Project:   types.StringValue(project),
+		Category:  parentFromSlugPath(slugPath, c.Category != nil),
 		Name:      trimmedStringValue(c.Name),
 		Slug:      trimmedStringValue(c.Slug),
 		Timeouts:  t,
@@ -122,29 +119,9 @@ func (r *categoryResource) Configure(_ context.Context, req resource.ConfigureRe
 
 // ModifyPlan rejects a parent Category outside the Project and plans id as the new slug path.
 func (r *categoryResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
-	if req.Plan.Raw.IsNull() {
-		return
+	if !req.Plan.Raw.IsNull() {
+		planSlugPath(ctx, resp)
 	}
-	var plan categoryResourceModel
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	parent := plan.Category
-	if parent.IsNull() {
-		parent = plan.Project
-	} else if !plan.Project.IsUnknown() && !parent.IsUnknown() &&
-		!strings.HasPrefix(parent.ValueString(), plan.Project.ValueString()+"/") {
-		resp.Diagnostics.AddAttributeError(path.Root("category"), "Parent Category outside the Project",
-			fmt.Sprintf("The parent Category %s is not in the Project %s. Set category to the id of a Category "+
-				"in that Project.", parent.ValueString(), plan.Project.ValueString()))
-		return
-	}
-	if parent.IsUnknown() || plan.Slug.IsUnknown() {
-		return
-	}
-	id := parent.ValueString() + "/" + strings.TrimSpace(plan.Slug.ValueString())
-	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("id"), id)...)
 }
 
 func (r *categoryResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -157,7 +134,7 @@ func (r *categoryResource) Create(ctx context.Context, req resource.CreateReques
 	}
 	fields["project"] = r.client.ProjectURL(plan.Project.ValueString())
 	if !plan.Category.IsNull() {
-		if fields["category"] = r.parentURL(ctx, plan.Category, &resp.Diagnostics); resp.Diagnostics.HasError() {
+		if fields["category"] = categoryURL(ctx, r.client, plan.Category, &resp.Diagnostics); resp.Diagnostics.HasError() {
 			return
 		}
 	}
@@ -170,21 +147,6 @@ func (r *categoryResource) Create(ctx context.Context, req resource.CreateReques
 	if !resp.Diagnostics.HasError() {
 		resp.Diagnostics.Append(readBackDiagnostics(ctx, req.Config, resp.State)...)
 	}
-}
-
-// parentURL returns the API URL of the Category with the given slug path, the form in which Weblate takes a parent.
-func (r *categoryResource) parentURL(ctx context.Context, slugPath types.String, diags *diag.Diagnostics) any {
-	parent, err := r.client.FindCategory(ctx, slugPath.ValueString())
-	if err != nil {
-		diags.Append(apiErrorDiagnostic("Finding the parent Category failed", err))
-		return nil
-	}
-	if parent == nil {
-		diags.AddAttributeError(path.Root("category"), "Parent Category not found",
-			fmt.Sprintf("Weblate has no Category with the slug path %s.", slugPath.ValueString()))
-		return nil
-	}
-	return parent.URL
 }
 
 func (r *categoryResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -222,24 +184,25 @@ func (r *categoryResource) Update(ctx context.Context, req resource.UpdateReques
 	var c *client.Category
 	var err error
 	if !plan.Project.Equal(state.Project) {
-		if c, err = r.client.GetCategory(ctx, id); err != nil {
+		var current string
+		if c, err = r.client.GetCategory(ctx, id); err == nil {
+			current, err = client.ProjectSlugFromURL(c.Project)
+		}
+		if err != nil {
 			resp.Diagnostics.Append(apiErrorDiagnostic("Reading the Category failed", err))
 			return
 		}
 		// Slugs are unique, so the same slug means the same Project, renamed since the last refresh.
-		if c.ProjectSlug() != plan.Project.ValueString() {
-			resp.Diagnostics.AddAttributeError(path.Root("project"), "Category cannot change its Project",
-				fmt.Sprintf("The Category %s is in the Project %s, and Weblate cannot move a Category to another "+
-					"Project. To delete it there and create it in the Project %s, which deletes the Components "+
-					"inside it, apply with -replace for this resource.",
-					state.ID.ValueString(), c.ProjectSlug(), plan.Project.ValueString()))
+		if current != plan.Project.ValueString() {
+			addProjectChangeError(&resp.Diagnostics, "Category", state.ID.ValueString(), current,
+				plan.Project.ValueString(), "the Components inside it")
 			return
 		}
 	}
 	if !plan.Category.Equal(state.Category) {
 		fields["category"] = nil
 		if !plan.Category.IsNull() {
-			if fields["category"] = r.parentURL(ctx, plan.Category, &resp.Diagnostics); resp.Diagnostics.HasError() {
+			if fields["category"] = categoryURL(ctx, r.client, plan.Category, &resp.Diagnostics); resp.Diagnostics.HasError() {
 				return
 			}
 		}
