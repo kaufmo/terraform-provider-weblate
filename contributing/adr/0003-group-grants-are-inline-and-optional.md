@@ -9,7 +9,7 @@ Group, without a breaking change to `weblate_group`.
 
 ## Considered options
 
-- **One resource per Grant type** (like `aws_iam_role_policy_attachment`): rejected for v0.1, because it adds five
+- **One resource per Grant type** (like `aws_iam_role_policy_attachment`): rejected for v1.0, because it adds five
   resource types, and the plan no longer shows a Group as one object. `project_selection = "all"` and
   `"component_list"` cover most cases where several modules add Projects to one Group.
 - **Omitted means empty**: simpler, but a later Grant resource would fight with every `weblate_group` that omits the

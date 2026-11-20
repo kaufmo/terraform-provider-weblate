@@ -18,7 +18,7 @@ inherits only from a Workspace, and Weblate stores the flag without an effect.
 
 - **Only `<field>`, with `null` meaning inherit**: no extra attributes, but an omitted attribute could no longer mean
   "not managed", which every other Optional and Computed attribute of the provider means.
-- **Expose `effective_<field>` as well**: rejected for v0.1. The resolved values change whenever a parent changes, so
+- **Expose `effective_<field>` as well**: rejected for v1.0. The resolved values change whenever a parent changes, so
   they would show up as changes outside OpenTofu on every refresh. They can be added later without a breaking change.
 
 ## Consequences
