@@ -57,13 +57,19 @@ func (c *Client) ProjectURL(slug string) string {
 
 // ProjectSlugFromURL returns the slug from the API URL of a Project, such as https://weblate.example/api/projects/docs/.
 func ProjectSlugFromURL(projectURL string) (string, error) {
-	u, err := url.Parse(projectURL)
+	return KeyFromURL(projectURL, "projects")
+}
+
+// KeyFromURL returns the last path segment of the API URL of an object in the given collection, such as 3 from
+// https://weblate.example/api/roles/3/ in the collection roles.
+func KeyFromURL(apiURL, collection string) (string, error) {
+	u, err := url.Parse(apiURL)
 	if err != nil {
 		return "", err
 	}
 	segments := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(segments) < 2 || segments[len(segments)-2] != "projects" {
-		return "", fmt.Errorf("%q is not the API URL of a Project", projectURL)
+	if len(segments) < 2 || segments[len(segments)-2] != collection {
+		return "", fmt.Errorf("%q is not the API URL of an object in %s", apiURL, collection)
 	}
 	return segments[len(segments)-1], nil
 }

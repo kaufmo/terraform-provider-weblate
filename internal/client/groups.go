@@ -2,12 +2,13 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 )
 
-// Group is a Weblate Group with the fields of Weblate's Group serializer that the provider manages. The Grants are
-// not here yet.
+// Group is a Weblate Group with the fields of Weblate's Group serializer that the provider manages.
 type Group struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
@@ -16,6 +17,69 @@ type Group struct {
 	ProjectSelection  int64   `json:"project_selection"`
 	LanguageSelection int64   `json:"language_selection"`
 	Enforced2FA       bool    `json:"enforced_2fa"`
+	// The Grants, each as a list of API URLs.
+	Roles          []string `json:"roles"`
+	Languages      []string `json:"languages"`
+	Projects       []string `json:"projects"`
+	ComponentLists []string `json:"componentlists"`
+	Components     []string `json:"components"`
+}
+
+// GrantType is one kind of Grant: the association endpoint below the Group and the body key that it takes. The keys
+// differ from the ones in Weblate's OpenAPI document, which does not match the code.
+type GrantType struct {
+	Endpoint, Key string
+}
+
+// The Grant types. Roles, Projects, Component lists and Components take a numeric ID, Languages a language code.
+var (
+	RoleGrants          = GrantType{"roles", "role_id"}
+	LanguageGrants      = GrantType{"languages", "language_code"}
+	ProjectGrants       = GrantType{"projects", "project_id"}
+	ComponentListGrants = GrantType{"componentlists", "component_list_id"}
+	ComponentGrants     = GrantType{"components", "component_id"}
+)
+
+// Grants returns the API URLs of the Group's Grants of the given type.
+func (g *Group) Grants(t GrantType) []string {
+	switch t {
+	case RoleGrants:
+		return g.Roles
+	case LanguageGrants:
+		return g.Languages
+	case ProjectGrants:
+		return g.Projects
+	case ComponentListGrants:
+		return g.ComponentLists
+	case ComponentGrants:
+		return g.Components
+	}
+	return nil
+}
+
+// AddGrant grants the object with the given key to the Group with the given ID.
+func (c *Client) AddGrant(ctx context.Context, group int64, t GrantType, key any) error {
+	return c.Do(ctx, http.MethodPost, GroupRef(group)+t.Endpoint+"/", map[string]any{t.Key: key}, nil)
+}
+
+// RemoveGrant removes the Grant of the object with the given key from the Group with the given ID.
+func (c *Client) RemoveGrant(ctx context.Context, group int64, t GrantType, key any) error {
+	return c.Do(ctx, http.MethodDelete, GroupRef(group)+t.Endpoint+"/"+url.PathEscape(fmt.Sprint(key))+"/", nil, nil)
+}
+
+// ComponentList is a Weblate Component list.
+type ComponentList struct {
+	ID   int64  `json:"id"`
+	Slug string `json:"slug"`
+}
+
+// GetComponentList reads the Component list with the given slug.
+func (c *Client) GetComponentList(ctx context.Context, slug string) (*ComponentList, error) {
+	var l ComponentList
+	if err := c.Do(ctx, http.MethodGet, "component-lists/"+url.PathEscape(slug)+"/", nil, &l); err != nil {
+		return nil, err
+	}
+	return &l, nil
 }
 
 // GroupRef returns the API path of the Group with the given ID.

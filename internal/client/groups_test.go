@@ -114,3 +114,117 @@ func TestProjectSlugFromURL(t *testing.T) {
 		}
 	}
 }
+
+func TestGetGroupDecodesTheGrants(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id": 12, "roles": ["https://weblate.example/api/roles/3/"],
+			"languages": ["https://weblate.example/api/languages/de/"],
+			"projects": ["https://weblate.example/api/projects/docs/"],
+			"componentlists": ["https://weblate.example/api/component-lists/core/"],
+			"components": ["https://weblate.example/api/components/docs/guides%252Fapi/"]}`))
+	}))
+	defer srv.Close()
+
+	g, err := newTestClient(t, srv.URL).GetGroup(context.Background(), 12)
+	if err != nil {
+		t.Fatalf("GetGroup: %v", err)
+	}
+	for grant, want := range map[GrantType]string{
+		RoleGrants:          "https://weblate.example/api/roles/3/",
+		LanguageGrants:      "https://weblate.example/api/languages/de/",
+		ProjectGrants:       "https://weblate.example/api/projects/docs/",
+		ComponentListGrants: "https://weblate.example/api/component-lists/core/",
+		ComponentGrants:     "https://weblate.example/api/components/docs/guides%252Fapi/",
+	} {
+		if got := g.Grants(grant); len(got) != 1 || got[0] != want {
+			t.Errorf("Grants(%s) = %v, want [%s]", grant.Endpoint, got, want)
+		}
+	}
+}
+
+func TestAddGrantPostsTheKeyThatWeblateExpects(t *testing.T) {
+	for _, tc := range []struct {
+		grant GrantType
+		key   any
+		path  string
+		body  string
+	}{
+		{RoleGrants, int64(3), "/api/groups/12/roles/", `{"role_id":3}`},
+		{LanguageGrants, "de", "/api/groups/12/languages/", `{"language_code":"de"}`},
+		{ProjectGrants, int64(7), "/api/groups/12/projects/", `{"project_id":7}`},
+		{ComponentListGrants, int64(2), "/api/groups/12/componentlists/", `{"component_list_id":2}`},
+		{ComponentGrants, int64(9), "/api/groups/12/components/", `{"component_id":9}`},
+	} {
+		var got, body string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			data, _ := io.ReadAll(r.Body)
+			got, body = r.Method+" "+r.URL.Path, string(data)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id": 12}`))
+		}))
+		if err := newTestClient(t, srv.URL).AddGrant(context.Background(), 12, tc.grant, tc.key); err != nil {
+			t.Errorf("AddGrant(%s): %v", tc.grant.Endpoint, err)
+		}
+		srv.Close()
+		if got != "POST "+tc.path || body != tc.body {
+			t.Errorf("AddGrant(%s) sent %s %s, want POST %s %s", tc.grant.Endpoint, got, body, tc.path, tc.body)
+		}
+	}
+}
+
+func TestRemoveGrantDeletesTheKey(t *testing.T) {
+	for _, tc := range []struct {
+		grant GrantType
+		key   any
+		path  string
+	}{
+		{RoleGrants, int64(3), "/api/groups/12/roles/3/"},
+		{LanguageGrants, "pt_BR", "/api/groups/12/languages/pt_BR/"},
+		{ComponentListGrants, int64(2), "/api/groups/12/componentlists/2/"},
+	} {
+		var got string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			got = r.Method + " " + r.URL.Path
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		if err := newTestClient(t, srv.URL).RemoveGrant(context.Background(), 12, tc.grant, tc.key); err != nil {
+			t.Errorf("RemoveGrant(%s): %v", tc.grant.Endpoint, err)
+		}
+		srv.Close()
+		if got != "DELETE "+tc.path {
+			t.Errorf("RemoveGrant(%s) sent %s, want DELETE %s", tc.grant.Endpoint, got, tc.path)
+		}
+	}
+}
+
+func TestGetComponentListReadsBySlug(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/component-lists/core/" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id": 2, "slug": "core", "name": "Core"}`))
+	}))
+	defer srv.Close()
+
+	l, err := newTestClient(t, srv.URL).GetComponentList(context.Background(), "core")
+	if err != nil || l.ID != 2 {
+		t.Errorf("GetComponentList = %v, %v, want ID 2", l, err)
+	}
+}
+
+func TestKeyFromURL(t *testing.T) {
+	for _, tc := range []struct{ url, collection, want string }{
+		{"https://weblate.example/api/roles/3/", "roles", "3"},
+		{"https://example.com/weblate/api/languages/sr@latin/", "languages", "sr@latin"},
+		{"https://weblate.example/api/component-lists/core/", "component-lists", "core"},
+	} {
+		if got, err := KeyFromURL(tc.url, tc.collection); err != nil || got != tc.want {
+			t.Errorf("KeyFromURL(%q) = %q, %v, want %q", tc.url, got, err, tc.want)
+		}
+	}
+	if got, err := KeyFromURL("https://weblate.example/api/roles/3/", "languages"); err == nil {
+		t.Errorf("KeyFromURL of a Role as a Language = %q, want an error", got)
+	}
+}
