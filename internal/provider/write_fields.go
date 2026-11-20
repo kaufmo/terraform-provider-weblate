@@ -15,11 +15,14 @@ import (
 // fieldsToWrite returns the request body of a create or update: the planned value of every top-level attribute that
 // config sets, keyed by attribute name, which is the field name in Weblate's serializer. With a prior state, only
 // attributes whose planned value differs from it are included, so an update leaves every other field alone. An
-// attribute that config omits is not managed and never sent.
+// attribute that config omits is not managed and never sent, and a write-only attribute is left to the resource.
 func fieldsToWrite(ctx context.Context, config tfsdk.Config, plan tfsdk.Plan, prior *tfsdk.State) (map[string]any, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	fields := map[string]any{}
-	for name := range config.Schema.GetAttributes() {
+	for name, attribute := range config.Schema.GetAttributes() {
+		if attribute.IsWriteOnly() {
+			continue
+		}
 		p := path.Root(name)
 		var configured, planned attr.Value
 		diags.Append(config.GetAttribute(ctx, p, &configured)...)

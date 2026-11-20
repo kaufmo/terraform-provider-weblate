@@ -2,8 +2,12 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -29,11 +33,72 @@ type addonResource struct {
 }
 
 type addonResourceModel struct {
-	ID            types.String         `tfsdk:"id"`
-	Component     types.String         `tfsdk:"component"`
-	Project       types.String         `tfsdk:"project"`
-	Name          types.String         `tfsdk:"name"`
-	Configuration jsontypes.Normalized `tfsdk:"configuration"`
+	ID                         types.String         `tfsdk:"id"`
+	Component                  types.String         `tfsdk:"component"`
+	Project                    types.String         `tfsdk:"project"`
+	Name                       types.String         `tfsdk:"name"`
+	Configuration              jsontypes.Normalized `tfsdk:"configuration"`
+	SecretConfiguration        jsontypes.Normalized `tfsdk:"secret_configuration_wo"`
+	SecretConfigurationVersion types.Int64          `tfsdk:"secret_configuration_wo_version"`
+}
+
+// secretKeysPrivateKey is the private state key of the key names of secret_configuration_wo at the last write that
+// sent the configuration. Read has no access to the configuration but has to remove these keys from what Weblate
+// returns (ADR 0005).
+const secretKeysPrivateKey = "secret_configuration_keys"
+
+// knownSecretKeys are the configuration keys that hold a secret, by Add-on name, so that an imported Add-on does not
+// write them into state either.
+var knownSecretKeys = map[string][]string{"weblate.webhook.webhook": {"secret"}}
+
+// removeSecrets removes the given keys and the known secret keys of the Add-on from the configuration of a.
+func removeSecrets(a *client.Addon, secretKeys []string) {
+	var configuration map[string]json.RawMessage
+	if json.Unmarshal(a.Configuration, &configuration) != nil || configuration == nil {
+		return
+	}
+	for _, key := range slices.Concat(secretKeys, knownSecretKeys[a.Name]) {
+		delete(configuration, key)
+	}
+	a.Configuration, _ = json.Marshal(configuration)
+}
+
+// privateState is the private state of a request or response, whose type is internal to the framework.
+type privateState interface {
+	GetKey(ctx context.Context, key string) ([]byte, diag.Diagnostics)
+	SetKey(ctx context.Context, key string, value []byte) diag.Diagnostics
+}
+
+func storedSecretKeys(ctx context.Context, private privateState) ([]string, diag.Diagnostics) {
+	data, diags := private.GetKey(ctx, secretKeysPrivateKey)
+	var keys []string
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &keys); err != nil {
+			diags.AddError("Invalid private state", fmt.Sprintf("The provider stored %s as the secret configuration "+
+				"keys: %s. This is a bug in the provider.", data, err))
+		}
+	}
+	return keys, diags
+}
+
+func storeSecretKeys(ctx context.Context, private privateState, keys []string) diag.Diagnostics {
+	data, _ := json.Marshal(keys)
+	return private.SetKey(ctx, secretKeysPrivateKey, data)
+}
+
+// addSecretConfiguration adds the keys of secret_configuration_wo from config to the configuration in fields, because
+// a PATCH replaces the whole configuration, and returns their names. sent is false when fields has no configuration.
+func addSecretConfiguration(ctx context.Context, config tfsdk.Config, fields map[string]any) (secret jsontypes.Normalized, keys []string, sent bool, diags diag.Diagnostics) {
+	delete(fields, "secret_configuration_wo_version")
+	configuration, sent := fields["configuration"].(map[string]any)
+	diags = config.GetAttribute(ctx, path.Root("secret_configuration_wo"), &secret)
+	if !sent || secret.IsNull() || diags.HasError() {
+		return jsontypes.NewNormalizedNull(), nil, sent, diags
+	}
+	var secrets map[string]any
+	diags.Append(secret.Unmarshal(&secrets)...)
+	maps.Copy(configuration, secrets)
+	return secret, slices.Sorted(maps.Keys(secrets)), sent, diags
 }
 
 func newAddonResourceModel(a *client.Addon) (addonResourceModel, diag.Diagnostics) {
@@ -121,6 +186,22 @@ func (r *addonResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				Computed:      true,
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
+			"secret_configuration_wo": schema.StringAttribute{
+				MarkdownDescription: "Secret settings of the Add-on as a JSON object, set with `jsonencode`, such as " +
+					"the `secret` of the `weblate.webhook.webhook` Add-on. Needs `configuration`; a key in both is " +
+					"an error. The provider adds these keys to `configuration` on every write that sends " +
+					"`configuration` and never stores them in plan or state. A changed secret shows in the plan " +
+					"only when `secret_configuration_wo_version` changes, and the provider cannot detect a secret " +
+					"that was changed outside OpenTofu.",
+				CustomType: jsontypes.NormalizedType{},
+				Optional:   true,
+				WriteOnly:  true,
+			},
+			"secret_configuration_wo_version": schema.Int64Attribute{
+				MarkdownDescription: "Change this number to send `secret_configuration_wo` again, such as after " +
+					"changing a secret.",
+				Optional: true,
+			},
 		},
 	}
 }
@@ -136,11 +217,43 @@ func (r *addonResource) ValidateConfig(ctx context.Context, req resource.Validat
 	if resp.Diagnostics.Append(req.Config.Get(ctx, &m)...); resp.Diagnostics.HasError() {
 		return
 	}
-	if m.Component.IsUnknown() || m.Project.IsUnknown() || m.Component.IsNull() != m.Project.IsNull() {
-		return
+	if !m.Component.IsUnknown() && !m.Project.IsUnknown() && m.Component.IsNull() == m.Project.IsNull() {
+		resp.Diagnostics.AddAttributeError(path.Root("component"), "Component or Project needed",
+			"An Add-on is on a Component or on a Project. Set exactly one of component and project.")
 	}
-	resp.Diagnostics.AddAttributeError(path.Root("component"), "Component or Project needed",
-		"An Add-on is on a Component or on a Project. Set exactly one of component and project.")
+	resp.Diagnostics.Append(validateSecretConfiguration(m)...)
+}
+
+func validateSecretConfiguration(m addonResourceModel) diag.Diagnostics {
+	var diags diag.Diagnostics
+	var secret, configuration map[string]any
+	switch {
+	case m.SecretConfiguration.IsNull() || m.SecretConfiguration.IsUnknown():
+	case m.SecretConfiguration.Unmarshal(&secret).HasError():
+		diags.AddAttributeError(path.Root("secret_configuration_wo"), "JSON object needed",
+			"Set secret_configuration_wo to a JSON object with jsonencode.")
+	case m.Configuration.IsNull():
+		diags.AddAttributeError(path.Root("configuration"), "Configuration needed",
+			"Weblate replaces the whole configuration of an Add-on, so the provider sends secret_configuration_wo "+
+				"only together with configuration. Set configuration.")
+	case m.Configuration.IsUnknown():
+	case m.Configuration.Unmarshal(&configuration).HasError():
+		diags.AddAttributeError(path.Root("configuration"), "JSON object needed",
+			"With secret_configuration_wo, set configuration to a JSON object with jsonencode.")
+	default:
+		var both []string
+		for _, key := range slices.Sorted(maps.Keys(secret)) {
+			if _, ok := configuration[key]; ok {
+				both = append(both, key)
+			}
+		}
+		if len(both) > 0 {
+			diags.AddAttributeError(path.Root("secret_configuration_wo"), "Key in configuration and secret configuration",
+				fmt.Sprintf("The keys %s are in both configuration and secret_configuration_wo. Set each key in one "+
+					"of them; only secret_configuration_wo keeps a key out of state.", strings.Join(both, ", ")))
+		}
+	}
+	return diags
 }
 
 // owner returns the API path of the Component or Project that holds the Add-on of m.
@@ -162,6 +275,10 @@ func (r *addonResource) Create(ctx context.Context, req resource.CreateRequest, 
 	// The Component or Project is in the URL; Weblate's serializer has them read-only.
 	delete(fields, "component")
 	delete(fields, "project")
+	secret, keys, sent, diags := addSecretConfiguration(ctx, req.Config, fields)
+	if resp.Diagnostics.Append(diags...); resp.Diagnostics.HasError() {
+		return
+	}
 	a, err := r.client.CreateAddon(ctx, plan.owner(), fields)
 	if client.IsAddonAlreadyInstalled(err, plan.Name.ValueString()) {
 		a, err = r.adopt(ctx, plan, fields, err)
@@ -170,7 +287,10 @@ func (r *addonResource) Create(ctx context.Context, req resource.CreateRequest, 
 		resp.Diagnostics.Append(apiErrorDiagnostic("Installing the Add-on failed", err))
 		return
 	}
-	storeWrittenAddon(ctx, req.Config, a, &resp.State, &resp.Diagnostics)
+	if sent {
+		resp.Diagnostics.Append(storeSecretKeys(ctx, resp.Private, keys)...)
+	}
+	storeWrittenAddon(ctx, req.Config, a, secret, keys, &resp.State, &resp.Diagnostics)
 }
 
 // adopt finds the installed Add-on that Weblate refused to install again and sends the configured configuration to
@@ -204,8 +324,13 @@ func (r *addonResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		resp.Diagnostics.Append(apiErrorDiagnostic("Reading the Add-on failed", err))
 		return
 	}
+	keys, diags := storedSecretKeys(ctx, req.Private)
+	resp.Diagnostics.Append(diags...)
+	removeSecrets(a, keys)
 	m, diags := newAddonResourceModel(a)
 	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("secret_configuration_wo_version"),
+		&m.SecretConfigurationVersion)...)
 	if !resp.Diagnostics.HasError() {
 		resp.Diagnostics.Append(resp.State.Set(ctx, m)...)
 	}
@@ -231,6 +356,21 @@ func (r *addonResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	_, projectChanged := fields["project"]
 	delete(fields, "component")
 	delete(fields, "project")
+	var configured jsontypes.Normalized
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("configuration"), &configured)...)
+	if _, bumped := fields["secret_configuration_wo_version"]; bumped && !configured.IsNull() {
+		fields["configuration"], diags = jsonValue(ctx, path.Root("configuration"), configured)
+		resp.Diagnostics.Append(diags...)
+	}
+	secret, keys, sent, diags := addSecretConfiguration(ctx, req.Config, fields)
+	resp.Diagnostics.Append(diags...)
+	if !sent {
+		keys, diags = storedSecretKeys(ctx, req.Private)
+		resp.Diagnostics.Append(diags...)
+	}
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	var a *client.Addon
 	var err error
 	if componentChanged || projectChanged {
@@ -262,7 +402,10 @@ func (r *addonResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		resp.Diagnostics.Append(apiErrorDiagnostic("Updating the Add-on failed", err))
 		return
 	}
-	storeWrittenAddon(ctx, req.Config, a, &resp.State, &resp.Diagnostics)
+	if sent {
+		resp.Diagnostics.Append(storeSecretKeys(ctx, resp.Private, keys)...)
+	}
+	storeWrittenAddon(ctx, req.Config, a, secret, keys, &resp.State, &resp.Diagnostics)
 }
 
 func (m addonResourceModel) ownerName() string {
@@ -272,13 +415,21 @@ func (m addonResourceModel) ownerName() string {
 	return "the Project " + m.Project.ValueString()
 }
 
-// storeWrittenAddon puts the Add-on that Weblate returned for a create or update into state, also when the read-back
-// check fails, because the write happened.
-func storeWrittenAddon(ctx context.Context, config tfsdk.Config, a *client.Addon, state *tfsdk.State, diags *diag.Diagnostics) {
+// storeWrittenAddon puts the Add-on that Weblate returned for a create or update into state without the secret keys,
+// also when the read-back check fails, because the write happened. sentSecret is the secret_configuration_wo that the
+// write sent, or null.
+func storeWrittenAddon(ctx context.Context, config tfsdk.Config, a *client.Addon, sentSecret jsontypes.Normalized,
+	secretKeys []string, state *tfsdk.State, diags *diag.Diagnostics) {
+	if changed := changedKeysSentence(sentSecret, jsontypes.NewNormalizedValue(string(a.Configuration))); changed != "" {
+		diags.AddAttributeError(path.Root("secret_configuration_wo"), "Weblate stored a different value",
+			"Weblate did not store secret_configuration_wo as sent; the values are secret and not shown."+changed)
+	}
+	removeSecrets(a, secretKeys)
 	m, d := newAddonResourceModel(a)
 	if diags.Append(d...); diags.HasError() {
 		return
 	}
+	diags.Append(config.GetAttribute(ctx, path.Root("secret_configuration_wo_version"), &m.SecretConfigurationVersion)...)
 	if diags.Append(state.Set(ctx, m)...); !diags.HasError() {
 		diags.Append(readBackDiagnostics(ctx, config, *state)...)
 	}
