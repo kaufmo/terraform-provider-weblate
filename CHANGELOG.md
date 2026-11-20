@@ -11,4 +11,5 @@ FEATURES:
 * **New Resource:** `weblate_project`, imported by slug. Renames happen in place, and delete waits until Weblate has removed the Project.
 * **New Data Source:** `weblate_role`, looked up by `name`.
 * **New Resource:** `weblate_category`, imported by slug path, such as `docs/guides`. Renames and moves happen in place, and delete waits until Weblate has removed the Category.
+* **New Resource:** `weblate_component` with its own repository, imported by slug path, such as `docs/guides/app`. Renames and moves happen in place, create and update wait for Weblate's background task, and delete waits until Weblate has removed the Component.
 * **New Resource:** `weblate_group` without Grants, imported by numeric ID. A Group belongs to the whole instance or, with `project`, to one Project.
