@@ -13,6 +13,8 @@ description: |-
   
   Create always sends disable_autoshare, so Weblate never turns a Component into a link to another Component with the same repository.
   
+  Weblate keeps repository credentials only inside the repo and push URLs and does not return them. The provider adds repo_username and repo_password_wo to repo, and push_username and push_password_wo to push; neither falls back to the other, and a URL with a user name or password fails at plan. A changed password shows in the plan only when its *_password_wo_version changes, and the provider cannot detect credentials that were changed outside OpenTofu. Weblate deletes the stored credentials whenever it receives repo or push without them, so the provider sends repo only when repo, repo_username or repo_password_wo_version changes, and then always with the credentials from the configuration; the same applies to push. After an import, or when the credentials were set in the Weblate UI, the first change of repo without repo_password_wo deletes the stored credentials.
+  
   Weblate adds objects of its own on create, which the provider ignores unless the configuration declares them: it installs Add-ons that depend on the file format and the DEFAULT_ADDONS setting, and for the first Component of a Project it creates a glossary Component with the slug glossary, unless the Weblate setting CREATE_GLOSSARIES is off. To manage that glossary, import it, such as docs/glossary.
 ---
 
@@ -28,21 +30,26 @@ Weblate processes a new or changed Component in a background task, such as cloni
 
 Create always sends `disable_autoshare`, so Weblate never turns a Component into a link to another Component with the same repository.
 
+Weblate keeps repository credentials only inside the `repo` and `push` URLs and does not return them. The provider adds `repo_username` and `repo_password_wo` to `repo`, and `push_username` and `push_password_wo` to `push`; neither falls back to the other, and a URL with a user name or password fails at plan. A changed password shows in the plan only when its `*_password_wo_version` changes, and the provider cannot detect credentials that were changed outside OpenTofu. Weblate deletes the stored credentials whenever it receives `repo` or `push` without them, so the provider sends `repo` only when `repo`, `repo_username` or `repo_password_wo_version` changes, and then always with the credentials from the configuration; the same applies to `push`. After an import, or when the credentials were set in the Weblate UI, the first change of `repo` without `repo_password_wo` deletes the stored credentials.
+
 Weblate adds objects of its own on create, which the provider ignores unless the configuration declares them: it installs Add-ons that depend on the file format and the `DEFAULT_ADDONS` setting, and for the first Component of a Project it creates a glossary Component with the slug `glossary`, unless the Weblate setting `CREATE_GLOSSARIES` is off. To manage that glossary, import it, such as `docs/glossary`.
 
 ## Example Usage
 
 ```terraform
 resource "weblate_component" "app" {
-  project     = weblate_project.docs.slug
-  category    = weblate_category.guides.id
-  name        = "App"
-  slug        = "app"
-  repo        = "https://github.com/example/app.git"
-  branch      = "main"
-  filemask    = "po/*.po"
-  new_base    = "po/messages.pot"
-  file_format = "po"
+  project                  = weblate_project.docs.slug
+  category                 = weblate_category.guides.id
+  name                     = "App"
+  slug                     = "app"
+  repo                     = "https://github.com/example/app.git"
+  repo_username            = "x-access-token"
+  repo_password_wo         = var.github_token
+  repo_password_wo_version = 1
+  branch                   = "main"
+  filemask                 = "po/*.po"
+  new_base                 = "po/messages.pot"
+  file_format              = "po"
 
   file_format_params = jsonencode({
     po_line_wrap = -1
@@ -59,10 +66,12 @@ resource "weblate_component" "app" {
 - `filemask` (String) Path of the translation files relative to the repository root, with `*` instead of the language code, such as `po/*.po`.
 - `name` (String) Display name of the Component. Unique in the Project.
 - `project` (String) Slug of the Project that holds the Component.
-- `repo` (String) URL of the repository that Weblate clones.
+- `repo` (String) URL of the repository that Weblate clones, without credentials.
 - `slug` (String) Slug of the Component, as in its URL. Unique in the Project.
 
 ### Optional
+
+> **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
 
 - `allow_translation_propagation` (Boolean) Whether translations from other Components of the Project with the same source string are used in this one. Defaults to `true`.
 - `auto_lock_error` (Boolean) Whether Weblate locks the Component on repository errors. Defaults to `true`.
@@ -84,10 +93,16 @@ resource "weblate_component" "app" {
 - `merge_style` (String) How Weblate brings in upstream changes: `rebase`, `merge` or `merge_noff`. Defaults to `rebase`.
 - `new_base` (String) Path of the file from which Weblate creates new translations, such as a `.pot` file.
 - `priority` (Number) Priority with which Weblate offers the Component to translators: `60` very high, `80` high, `100` medium, `120` low, `140` very low. Defaults to `100`.
-- `push` (String) URL of the repository that Weblate pushes to. Weblate does not push when it is empty.
+- `push` (String) URL of the repository that Weblate pushes to, without credentials. Weblate does not push when it is empty.
 - `push_branch` (String) Branch that Weblate pushes to. Empty means `branch`.
 - `push_on_commit` (Boolean) Whether Weblate pushes after every commit. Defaults to `true`.
 - `push_on_update` (Boolean) Whether Weblate pushes after updating the repository, even without new translations. Defaults to `true`.
+- `push_password_wo` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Password or token that the provider adds to `push`. Needs `push_username`. It is write-only: it never reaches plan or state, so the provider sends a new value only when `push_password_wo_version` changes. Needs OpenTofu or Terraform 1.11 or later.
+- `push_password_wo_version` (Number) Version of `push_password_wo`. Change it, such as by adding 1, to send `push` with the current `push_password_wo`.
+- `push_username` (String) User name that the provider adds to `push`. A token login takes the user name that the host expects, such as `x-access-token` for GitHub, `oauth2` for GitLab or `x-token-auth` for Bitbucket. An SSH URL, such as `ssh://git@example.com/app.git`, needs `git` here and no `push_password_wo`.
+- `repo_password_wo` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Password or token that the provider adds to `repo`. Needs `repo_username`. It is write-only: it never reaches plan or state, so the provider sends a new value only when `repo_password_wo_version` changes. Needs OpenTofu or Terraform 1.11 or later.
+- `repo_password_wo_version` (Number) Version of `repo_password_wo`. Change it, such as by adding 1, to send `repo` with the current `repo_password_wo`.
+- `repo_username` (String) User name that the provider adds to `repo`. A token login takes the user name that the host expects, such as `x-access-token` for GitHub, `oauth2` for GitLab or `x-token-auth` for Bitbucket. An SSH URL, such as `ssh://git@example.com/app.git`, needs `git` here and no `repo_password_wo`.
 - `report_source_bugs` (String) E-mail address for reports on errors in source strings.
 - `repoweb` (String) Link to a repository browser for source files, with the placeholders `{{branch}}`, `{{filename}}` and `{{line}}`.
 - `repoweb_translations` (String) Link to a repository browser for translation files. Empty means `repoweb`.
