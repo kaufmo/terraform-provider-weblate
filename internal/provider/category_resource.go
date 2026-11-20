@@ -68,8 +68,8 @@ func (r *categoryResource) Schema(ctx context.Context, _ resource.SchemaRequest,
 		MarkdownDescription: "Manages a Weblate Category, a folder inside a Project that groups Components. " +
 			"Categories can nest up to three levels deep.\n\n" +
 			"Changing `name` or `slug` renames the Category in place, and changing `category` moves it in place. " +
-			"Weblate cannot move a Category to another Project: changing `project` to another Project fails on " +
-			"apply, while changing it after a rename of the same Project only updates the state. Delete waits " +
+			"Weblate cannot move a Category to another Project, so changing `project` to another Project fails on " +
+			"apply. When `project` changes because the Project was renamed, only the state changes. Delete waits " +
 			"until Weblate has removed the Category in the background.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{

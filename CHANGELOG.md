@@ -10,3 +10,4 @@ FEATURES:
 * **New Data Source:** `weblate_project`, looked up by `slug`.
 * **New Resource:** `weblate_project`, imported by slug. Renames happen in place, and delete waits until Weblate has removed the Project.
 * **New Data Source:** `weblate_role`, looked up by `name`.
+* **New Resource:** `weblate_category`, imported by slug path, such as `docs/guides`. Renames and moves happen in place, and delete waits until Weblate has removed the Category.
