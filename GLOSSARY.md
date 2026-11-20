@@ -18,6 +18,9 @@ _Avoid_: server, site
 
 ## Weblate objects
 
+**Workspace**:
+An optional level above Projects that groups them and passes Inherited settings down to them.
+
 **Project**:
 The top-level container for Components, owned by one Weblate instance.
 
@@ -27,6 +30,14 @@ A folder inside a Project that groups Components; Categories can nest.
 **Component**:
 One translatable resource inside a Project, backed by one VCS repository and one file format.
 _Avoid_: resource (clashes with the OpenTofu term)
+
+**Linked Component**:
+A Component that uses the VCS repository of another Component in the same Project instead of its own.
+_Avoid_: shared component, autoshared component
+
+**Inherited setting**:
+A setting that a Component, Category or Project either sets itself or takes from the next level up: Category, Project, then Workspace. A license or a commit message template are examples.
+_Avoid_: default, inherited value
 
 **Slug path**:
 The slugs from the Project down to a Category or Component, joined by `/`, such as `docs/guides/api`. Changes when any of these objects is renamed or moved.
