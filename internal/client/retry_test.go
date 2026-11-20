@@ -84,7 +84,7 @@ func TestRetriesTransientErrorsWithBackoff(t *testing.T) {
 func TestGivesUpAfterFiveAttempts(t *testing.T) {
 	s := &scripted{statuses: []int{503}}
 	_, err := s.run(t, http.MethodGet)
-	wantStatus(t, err, 503)
+	_ = wantStatus(t, err, 503)
 	if len(s.bodies) != 5 {
 		t.Errorf("attempts = %d, want 5", len(s.bodies))
 	}
@@ -94,7 +94,7 @@ func TestPostIsNotRetriedOnTransientErrors(t *testing.T) {
 	for _, status := range []int{502, 503, 504} {
 		s := &scripted{statuses: []int{status, 201}}
 		_, err := s.run(t, http.MethodPost)
-		wantStatus(t, err, status)
+		_ = wantStatus(t, err, status)
 		if len(s.bodies) != 1 {
 			t.Errorf("%d: attempts = %d, want 1", status, len(s.bodies))
 		}
