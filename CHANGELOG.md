@@ -1,3 +1,5 @@
+## 1.0.1 (Unreleased)
+
 ## 1.0.0 (November 20, 2026)
 
 NOTES:
