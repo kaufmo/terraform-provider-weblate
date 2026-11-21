@@ -7,6 +7,28 @@ OpenTofu/Terraform provider for managing Weblate projects, components, add-ons a
 - Weblate `2026.10.1` or later.
 - Go 1.26 or later to build the provider.
 
+## Usage
+
+```hcl
+terraform {
+  required_providers {
+    weblate = {
+      source  = "kaufmo/weblate"
+      version = "~> 1.0"
+    }
+  }
+}
+
+provider "weblate" {
+  url = "https://weblate.example.com"
+  # Leave out token and set the WEBLATE_API_TOKEN environment variable, so the token stays out of the configuration.
+}
+```
+
+The resources and data sources are documented in the
+[OpenTofu Registry](https://search.opentofu.org/provider/kaufmo/weblate/latest) and the
+[Terraform Registry](https://registry.terraform.io/providers/kaufmo/weblate/latest/docs).
+
 ## Acceptance tests
 
 The acceptance tests run against a real Weblate instance in Docker, next to a static git server that serves the
